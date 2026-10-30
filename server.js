@@ -77,14 +77,19 @@ app.prepare().then(() => {
     if (!room || room.gameState === "results") return;
     room.gameState = "results";
 
+    const allAudios = Object.values(room.audios).map((a) => ({
+      playerName: a.playerName,
+      audioData: a.audioData,
+      playerId: a.playerId,
+      skipped: a.skipped,
+    }));
+
     io.to(roomCode).emit("all-imitations-done", {
-      audios: Object.values(room.audios).map((a) => ({
-        playerName: a.playerName,
-        audioData: a.audioData,
-        playerId: a.playerId,
-      })),
+      allAudios,
+      audios: allAudios,
       originalAudio: room.originalAudio,
       targetText: room.targetText || null,
+      speakerName: room.currentSpeaker ? room.currentSpeaker.name : "Speaker",
       speaker: room.currentSpeaker ? room.currentSpeaker.name : "Speaker",
     });
 
@@ -238,7 +243,7 @@ app.prepare().then(() => {
     });
 
     // Speaker submits their original audio & optional target text
-    socket.on("submit-original-audio", ({ roomCode, audioData, targetText }) => {
+    const handleOriginalAudio = ({ roomCode, audioData, targetText }) => {
       const room = rooms.get(roomCode);
       if (!room || !room.currentSpeaker || room.currentSpeaker.id !== socket.id) return;
 
@@ -246,30 +251,37 @@ app.prepare().then(() => {
       room.targetText = targetText || null;
       room.gameState = "playing-reversed";
 
-      // Notify all players
-      io.to(roomCode).emit("original-submitted", {
+      const payload = {
+        originalAudio: audioData,
         audioData: audioData,
+        speakerName: room.currentSpeaker.name,
         speaker: room.currentSpeaker.name,
         targetText: room.targetText,
-      });
+      };
+
+      // Notify all players (support both event names)
+      io.to(roomCode).emit("original-audio-submitted", payload);
+      io.to(roomCode).emit("original-submitted", payload);
 
       console.log(`[Game] Room ${roomCode}: original audio submitted by ${room.currentSpeaker.name} (phrase: "${room.targetText || 'n/a'}")`);
-    });
+    };
+    socket.on("submit-original-audio", handleOriginalAudio);
 
-    // Start turns after listening
-    socket.on("request-next-turn", ({ roomCode }) => {
+    // Start turns after listening (support both events)
+    const handleNextTurn = ({ roomCode }) => {
       const room = rooms.get(roomCode);
       if (!room) return;
       advanceToNextTurn(room, roomCode);
-    });
+    };
+    socket.on("request-next-turn", handleNextTurn);
+    socket.on("ready-to-imitate", handleNextTurn);
 
     // Host can skip an inactive player's turn
-    socket.on("skip-turn", ({ roomCode }) => {
+    const handleSkip = ({ roomCode }) => {
       const room = rooms.get(roomCode);
       if (!room || room.host.id !== socket.id) return;
       if (room.currentTurnPlayer) {
         console.log(`[Game] Room ${roomCode}: Host skipped turn for ${room.currentTurnPlayer.name}`);
-        // Mark as skipped with empty audio if needed
         room.audios[room.currentTurnPlayer.id] = {
           playerName: room.currentTurnPlayer.name,
           audioData: "",
@@ -278,15 +290,20 @@ app.prepare().then(() => {
         };
         advanceToNextTurn(room, roomCode);
       }
-    });
+    };
+    socket.on("skip-turn", handleSkip);
+    socket.on("skip-current-turn", handleSkip);
 
-    // An imitator submits their imitation audio
-    socket.on("submit-imitation", ({ roomCode, audioData, playerName }) => {
+    // An imitator submits their imitation audio (support both events)
+    const handleSubmitImitation = ({ roomCode, audioData, playerName }) => {
       const room = rooms.get(roomCode);
       if (!room) return;
 
+      const player = room.players.find((p) => p.id === socket.id);
+      const name = playerName || player?.name || "Player";
+
       room.audios[socket.id] = {
-        playerName,
+        playerName: name,
         audioData,
         playerId: socket.id,
       };
@@ -296,20 +313,24 @@ app.prepare().then(() => {
 
       // Notify everyone about submission progress
       io.to(roomCode).emit("imitation-submitted", {
-        playerName,
+        playerName: name,
         playerId: socket.id,
         submittedCount,
         totalImitators,
+        currentTurnPlayer: room.currentTurnPlayer,
+        turnNumber: submittedCount,
       });
 
-      console.log(`[Game] Room ${roomCode}: ${playerName} submitted imitation (${submittedCount}/${totalImitators})`);
+      console.log(`[Game] Room ${roomCode}: ${name} submitted imitation (${submittedCount}/${totalImitators})`);
 
       // Automatically advance to the next player or finish!
       advanceToNextTurn(room, roomCode);
-    });
+    };
+    socket.on("submit-imitation", handleSubmitImitation);
+    socket.on("submit-imitation-audio", handleSubmitImitation);
 
-    // Submit rankings
-    socket.on("submit-ranking", ({ roomCode, rankings }) => {
+    // Submit rankings (support both events)
+    const handleSubmitRanking = ({ roomCode, rankings }) => {
       const room = rooms.get(roomCode);
       if (!room) return;
 
@@ -317,10 +338,12 @@ app.prepare().then(() => {
       room.rankings[socket.id] = rankings;
 
       checkAndComputeRankings(room, roomCode);
-    });
+    };
+    socket.on("submit-ranking", handleSubmitRanking);
+    socket.on("submit-rankings", handleSubmitRanking);
 
-    // Host requests new round
-    socket.on("new-round", ({ roomCode }) => {
+    // Host requests new round (support both events)
+    const handleNewRound = ({ roomCode }) => {
       const room = rooms.get(roomCode);
       if (!room || room.host.id !== socket.id) return;
 
@@ -336,7 +359,9 @@ app.prepare().then(() => {
       io.to(roomCode).emit("return-to-lobby", {
         players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
       });
-    });
+    };
+    socket.on("new-round", handleNewRound);
+    socket.on("next-round", handleNewRound);
 
     // Handle disconnect
     socket.on("disconnect", () => {

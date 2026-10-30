@@ -336,44 +336,58 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       },
     )
 
-    const unsubOriginalSubmitted = on(
-      "original-audio-submitted",
-      async ({ originalAudio, reversedAudio, speakerName: sn, targetText: tt }: any) => {
-        setSpeakerName(sn)
-        if (tt) setTargetText(tt)
-        try {
-          const revBuf = await decodeBase64Audio(reversedAudio)
-          setReversedAudioBuffer(revBuf)
-          const origBuf = await decodeBase64Audio(originalAudio)
-          setOriginalAudioBuffer(origBuf)
-        } catch (e) {
-          console.error("Failed to decode audio buffers:", e)
-        }
+    const handleOriginalAudioArrival = async (data: any) => {
+      const audioPayload = data?.originalAudio || data?.audioData
+      const sn = data?.speakerName || data?.speaker || "Speaker"
+      setSpeakerName(sn)
+      if (data?.targetText) setTargetText(data.targetText)
 
-        if (speaker?.id !== socketId) {
-          setPhase("listening-reversed")
-          sfx.playRewind()
+      try {
+        if (audioPayload) {
+          const origBuf = await decodeBase64Audio(audioPayload)
+          setOriginalAudioBuffer(origBuf)
+          const revBuf = data?.reversedAudio
+            ? await decodeBase64Audio(data.reversedAudio)
+            : reverseAudioBuffer(origBuf)
+          setReversedAudioBuffer(revBuf)
         }
-      },
-    )
+      } catch (e) {
+        console.error("Failed to decode audio buffers:", e)
+      }
+
+      if (speaker?.id !== socketId) {
+        setPhase("listening-reversed")
+        sfx.playRewind()
+      }
+    }
+
+    const unsubOriginalSubmitted = on("original-audio-submitted", handleOriginalAudioArrival)
+    const unsubOriginalSubmittedAlias = on("original-submitted", handleOriginalAudioArrival)
 
     const unsubYourTurn = on(
       "your-turn",
-      ({ turnNumber: tn, totalTurns: tt }: any) => {
+      ({ turnNumber: tn, totalTurns: tt, player }: any) => {
         setTurnNumber(tn)
         setTotalTurns(tt)
-        setCurrentTurnPlayer({ name: playerName, id: socketId || "" })
 
-        setPhase("my-turn-countdown")
-        triggerRecordingCountdown(() => {
-          setPhase("my-turn-record")
-          startRecording((base64Wav) => {
-            emit("submit-imitation-audio", { roomCode, audioData: base64Wav })
-            setHasSubmitted(true)
-            setPhase("waiting-turn")
-            sfx.playSuccess()
+        const isMe = !player || player.id === socketId || player.name === playerName
+
+        if (isMe) {
+          setCurrentTurnPlayer({ name: playerName, id: socketId || "" })
+          setPhase("my-turn-countdown")
+          triggerRecordingCountdown(() => {
+            setPhase("my-turn-record")
+            startRecording((base64Wav) => {
+              emit("submit-imitation-audio", { roomCode, audioData: base64Wav, playerName })
+              setHasSubmitted(true)
+              setPhase("waiting-turn")
+              sfx.playSuccess()
+            })
           })
-        })
+        } else {
+          setCurrentTurnPlayer(player)
+          setPhase("waiting-turn")
+        }
       },
     )
 
@@ -382,15 +396,17 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       ({ submittedCount: sc, totalImitators: ti, currentTurnPlayer: ctp, turnNumber: tn }: any) => {
         setSubmittedCount(sc)
         setTotalImitators(ti)
-        setCurrentTurnPlayer(ctp)
-        setTurnNumber(tn)
+        if (ctp) setCurrentTurnPlayer(ctp)
+        if (tn) setTurnNumber(tn)
       },
     )
 
-    const unsubAllDone = on("all-imitations-done", async ({ allAudios: audios, speakerName: sn, targetText: tt }: any) => {
+    const unsubAllDone = on("all-imitations-done", async (data: any) => {
+      const audios = data?.allAudios || data?.audios || []
+      const sn = data?.speakerName || data?.speaker || "Speaker"
       setAllAudios(audios)
       setSpeakerName(sn)
-      if (tt) setTargetText(tt)
+      if (data?.targetText) setTargetText(data.targetText)
 
       const audioMap: DecodedAudioMap = {}
       for (const a of audios) {
@@ -445,6 +461,7 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       unsubLeft()
       unsubGameStarted()
       unsubOriginalSubmitted()
+      unsubOriginalSubmittedAlias()
       unsubYourTurn()
       unsubImitationSubmitted()
       unsubAllDone()
@@ -589,9 +606,9 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 font-sans transition-colors duration-300">
+    <div className="min-h-[100dvh] bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-6 md:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 font-sans transition-colors duration-300 w-full overflow-x-hidden">
       {/* Top Bar Header */}
-      <header className="flex items-center justify-between border-b border-[#e2e2e8] dark:border-[#35353d] pb-4">
+      <header className="flex flex-wrap items-center justify-between border-b border-[#e2e2e8] dark:border-[#35353d] pb-3 sm:pb-4 gap-2.5">
         {phase === "choose-role" ? (
           <Button
             variant="ghost"
@@ -615,21 +632,21 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {roomCode && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="text-xs font-bold text-[#8e8d99] dark:text-[#71717d]">ROOM:</span>
-              <span className="font-black text-sm text-[#111113] dark:text-[#f5f4ed] tracking-widest px-2.5 py-1 rounded-lg bg-[#f4f4f7] dark:bg-[#1b1b20] border border-[#e2e2e8] dark:border-[#35353d]">
+              <span className="font-black text-xs sm:text-sm text-[#111113] dark:text-[#f5f4ed] tracking-wider sm:tracking-widest px-2 sm:px-2.5 py-1 rounded-lg bg-[#f4f4f7] dark:bg-[#1b1b20] border border-[#e2e2e8] dark:border-[#35353d]">
                 {roomCode}
               </span>
               {round > 0 && (
                 <span className="text-xs font-black text-[#72a800] dark:text-[#d3ff62] px-2 py-0.5 rounded-full bg-[#f4f4f7] dark:bg-[#1b1b20] border border-[#e2e2e8] dark:border-[#35353d]">
-                  Round {round}
+                  R{round}
                 </span>
               )}
             </div>
           )}
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest px-3 py-1.5 rounded-full bg-[#f4f4f7] dark:bg-[#1b1b20] text-[#72a800] dark:text-[#d3ff62] border border-[#e2e2e8] dark:border-[#35353d]">
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest px-2.5 sm:px-3 py-1.5 rounded-full bg-[#f4f4f7] dark:bg-[#1b1b20] text-[#72a800] dark:text-[#d3ff62] border border-[#e2e2e8] dark:border-[#35353d]">
             <Image
               src="/figma/users.svg"
               alt="Party"

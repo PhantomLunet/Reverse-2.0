@@ -256,9 +256,9 @@ export function SoloMode({ onBack }: SoloModeProps) {
   }, [stopPlayback])
 
   return (
-    <div className="min-h-screen bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 transition-colors duration-300">
+    <div className="min-h-[100dvh] bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-6 md:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 transition-colors duration-300 w-full overflow-x-hidden">
       {/* Top Header */}
-      <header className="flex items-center justify-between pb-4 border-b border-[#e2e2e8] dark:border-[#35353d]">
+      <header className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#e2e2e8] dark:border-[#35353d]">
         <button
           type="button"
           onClick={onBack}
