@@ -1,0 +1,21 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #09090b; }
+      .fg { fill: #ffffff; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #ffffff; }
+      .fg { fill: #09090b; }
+    }
+  </style>
+  <rect class="bg" width="180" height="180" rx="40" />
+  <!-- Minimalist Architectural Reversal Icon (R3 / Leftward vectors) -->
+  <g class="fg" fill-rule="evenodd" clip-rule="evenodd">
+    <!-- Leftward double chevron/arrow mark -->
+    <path d="M78 54L42 90L78 126V108L60 90L78 72V54Z" />
+    <path d="M124 54L88 90L124 126V108L106 90L124 72V54Z" />
+    <!-- Monospace accent block -->
+    <rect x="134" y="60" width="12" height="60" rx="3" />
+  </g>
+</svg>

@@ -1,0 +1,46 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Next.js Build Outputs
+/.next/
+/out/
+/build
+
+# Vercel Deployment Metadata
+.vercel
+
+# Debug Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# Local Environment Variables
+.env*.local
+.env
+!.env.example
+
+# TypeScript Build Cache
+*.tsbuildinfo
+next-env.d.ts
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor Configs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# AI Assistant & Local Dev Tool Configs (Avoid publishing local agent rules & MCP configs to public repo)
+.antigravity/
+.agents/
+.gemini/

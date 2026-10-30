@@ -1,0 +1,8 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Reverse audio symbol">
+<rect width="30" height="30" rx="7.5" fill="#D3FF62"/>
+<rect id="Sound bar" x="23.4" y="11.1" width="2.1" height="7.8" rx="0.75" fill="#111113"/>
+<rect id="Sound bar_2" x="19.8" y="6.6" width="2.1" height="16.8" rx="0.75" fill="#111113"/>
+<path id="Rewind" d="M5.1 15L11.7 9V21L5.1 15ZM11.7 15L18.3 9V21L11.7 15Z" fill="#111113"/>
+</g>
+</svg>
