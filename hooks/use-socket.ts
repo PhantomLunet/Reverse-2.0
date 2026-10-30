@@ -307,13 +307,6 @@ export function useSocket() {
             speaker: room.currentSpeaker?.name || "Speaker",
             targetText: room.targetText,
           })
-          broadcastToRoom("original-submitted", {
-            originalAudio: data.audioData,
-            audioData: data.audioData,
-            speakerName: room.currentSpeaker?.name || "Speaker",
-            speaker: room.currentSpeaker?.name || "Speaker",
-            targetText: room.targetText,
-          })
         } else if (event === "ready-to-imitate" || event === "request-next-turn") {
           advanceToNextTurn(room)
         } else if (event === "submit-imitation-audio" || event === "submit-imitation") {
@@ -415,8 +408,8 @@ export function useSocket() {
               callback({
                 success: true,
                 roomCode,
-                localIP: "P2P WebRTC Cloud",
-                port: 443,
+                localIP: typeof window !== "undefined" ? window.location.hostname : "localhost",
+                port: typeof window !== "undefined" && window.location.port ? parseInt(window.location.port, 10) : 443,
               })
             }
           })
@@ -424,10 +417,18 @@ export function useSocket() {
           hostPeer.on("connection", (conn: any) => {
             console.log("[P2P Host] New peer connected:", conn.peer)
 
+            // Immediately attach data handler (do not wait or nest in conn.on('open'))
+            conn.on("data", (msg: any) => {
+              console.log("[P2P Host] Received data from peer:", conn.peer, msg?.event || msg?.type)
+              handleHostIncomingMessage(conn, msg)
+            })
+
             conn.on("open", () => {
-              conn.on("data", (msg: any) => {
-                handleHostIncomingMessage(conn, msg)
-              })
+              console.log("[P2P Host] DataChannel opened with peer:", conn.peer)
+            })
+
+            conn.on("error", (err: any) => {
+              console.error("[P2P Host] Peer connection error:", err)
             })
 
             conn.on("close", () => {
@@ -483,11 +484,16 @@ export function useSocket() {
 
           clientPeer.on("open", (id: string) => {
             setMyId(id)
+            console.log("[P2P Client] Connected to signaling with ID:", id, "Connecting to host:", targetHostId)
             const conn = clientPeer.connect(targetHostId, { reliable: true })
             clientConnRef.current = conn
 
-            conn.on("open", () => {
+            let joinSent = false
+            const sendJoinReq = () => {
+              if (joinSent) return
+              joinSent = true
               const reqId = Math.random().toString(36).substring(2, 9)
+              console.log("[P2P Client] Sending join-room request:", reqId, data)
               if (callback) {
                 reqCallbacksRef.current.set(reqId, callback)
               }
@@ -498,9 +504,20 @@ export function useSocket() {
                 event: "join-room",
                 data,
               })
-            })
 
+              setTimeout(() => {
+                if (reqCallbacksRef.current.has(reqId)) {
+                  console.warn("[P2P Client] Join request timed out for reqId:", reqId)
+                  const cb = reqCallbacksRef.current.get(reqId)
+                  reqCallbacksRef.current.delete(reqId)
+                  cb?.({ success: false, error: "Host did not respond. Check room code." })
+                }
+              }, 10000)
+            }
+
+            // Immediately attach data handler
             conn.on("data", (msg: any) => {
+              console.log("[P2P Client] Received data from host:", msg?.type, msg?.event)
               if (!msg || typeof msg !== "object") return
               if (msg.type === "res" && msg.reqId) {
                 const cb = reqCallbacksRef.current.get(msg.reqId)
@@ -512,6 +529,15 @@ export function useSocket() {
                 triggerLocal(msg.event, msg.payload)
               }
             })
+
+            if (conn.open) {
+              sendJoinReq()
+            } else {
+              conn.on("open", () => {
+                console.log("[P2P Client] Connected to host DataChannel successfully")
+                sendJoinReq()
+              })
+            }
 
             conn.on("error", (err: any) => {
               console.error("[P2P Client] Connection error:", err)
@@ -569,13 +595,6 @@ export function useSocket() {
           room.gameState = "playing-reversed"
 
           broadcastToRoom("original-audio-submitted", {
-            originalAudio: data.audioData,
-            audioData: data.audioData,
-            speakerName: room.currentSpeaker?.name || "Speaker",
-            speaker: room.currentSpeaker?.name || "Speaker",
-            targetText: room.targetText,
-          })
-          broadcastToRoom("original-submitted", {
             originalAudio: data.audioData,
             audioData: data.audioData,
             speakerName: room.currentSpeaker?.name || "Speaker",

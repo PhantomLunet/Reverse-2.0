@@ -102,6 +102,14 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   const [copiedLink, setCopiedLink] = useState(false)
   const [networkInfo, setNetworkInfo] = useState<{ localIP: string; port: number } | null>(null)
 
+  useEffect(() => {
+    if (initialRoomCode) {
+      setJoinCode(initialRoomCode.toUpperCase())
+      setRoomCode(initialRoomCode.toUpperCase())
+      setPhase("join-setup")
+    }
+  }, [initialRoomCode])
+
   // Speaker phrase & audio state
   const [speaker, setSpeaker] = useState<{ name: string; id: string } | null>(null)
   const [round, setRound] = useState(0)
@@ -596,11 +604,17 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   }
 
   const getJoinUrl = () => {
-    if (networkInfo && networkInfo.localIP !== "localhost") {
-      return `http://${networkInfo.localIP}:${networkInfo.port}/?room=${roomCode}`
-    }
     if (typeof window !== "undefined") {
-      return `${window.location.origin}/?room=${roomCode}`
+      const origin = window.location.origin
+      // When deployed on Vercel or any real domain, always use window.location.origin!
+      if (!window.location.hostname.includes("localhost") && !window.location.hostname.includes("127.0.0.1")) {
+        return `${origin}/?room=${roomCode}`
+      }
+      // Only when testing on localhost, use local Wi-Fi IPv4 from server.js if available
+      if (networkInfo?.localIP && /^\d+\.\d+\.\d+\.\d+$/.test(networkInfo.localIP)) {
+        return `http://${networkInfo.localIP}:${networkInfo.port}/?room=${roomCode}`
+      }
+      return `${origin}/?room=${roomCode}`
     }
     return `/?room=${roomCode}`
   }
