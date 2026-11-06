@@ -218,7 +218,7 @@ export function ModeSelector({
 
   return (
     <div
-      className={`min-h-[100dvh] flex flex-col justify-between selection:bg-[#d3ff62]/40 relative overflow-x-hidden transition-colors duration-1000 font-sans ${
+      className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between selection:bg-[#d3ff62]/40 relative overflow-hidden transition-colors duration-1000 font-sans ${
         animStage < 3
           ? "bg-[#0b0b0e] text-[#f5f4ed]"
           : "bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed]"
@@ -229,7 +229,7 @@ export function ModeSelector({
         <button
           type="button"
           onClick={skipIntro}
-          className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 flex items-center gap-2 bg-[#1b1b20]/80 hover:bg-[#232329] text-[#f5f4ed] border border-[#35353d] hover:border-[#d3ff62] px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs font-semibold backdrop-blur-md transition-all shadow-xl hover:scale-105 cursor-pointer"
+          className="fixed top-3 right-3 sm:top-5 sm:right-6 z-50 flex items-center gap-2 bg-[#1b1b20]/85 hover:bg-[#232329] text-[#f5f4ed] border border-[#35353d] hover:border-[#d3ff62] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs font-semibold backdrop-blur-md transition-all shadow-xl hover:scale-105 cursor-pointer"
         >
           <span>Skip Intro</span>
           <span className="text-[#d3ff62]">→</span>
@@ -237,20 +237,84 @@ export function ModeSelector({
       )}
 
       {/* ======================================================== */}
-      {/* 1. INTRO / HERO VIEW (Matching Figma Intro · Desktop, Tablet & iPhone) */}
+      {/* 1. INTRO / HERO VIEW (Viewport-Fit for Mobile, Tablet & Desktop) */}
       {/* ======================================================== */}
       {view === "intro" && (
-        <div className="flex-1 flex flex-col justify-between p-4 sm:p-6 md:p-8 lg:p-10 max-w-7xl mx-auto w-full relative z-10 min-h-[100dvh]">
+        <div className="h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between p-3 sm:p-5 md:p-8 max-w-7xl mx-auto relative z-10 overflow-hidden">
+          {/* Left Sound Orbit with Glowing Waves (Anchored to Screen Edge on ALL devices) */}
+          <div
+            className={`absolute left-0 -translate-x-1/2 top-[24%] sm:top-[28%] lg:top-1/2 -translate-y-1/2 w-[280px] h-[280px] sm:w-[350px] sm:h-[350px] md:w-[420px] md:h-[420px] lg:w-[480px] lg:h-[480px] pointer-events-none transition-all duration-700 z-0 ${
+              animStage >= 1
+                ? "opacity-45 sm:opacity-55 scale-100"
+                : "opacity-0 scale-75"
+            }`}
+          >
+            <Image
+              src="/figma/sound-orbit.svg"
+              alt=""
+              width={480}
+              height={480}
+              className="w-full h-full animate-spin-slow"
+            />
+            {/* Left Equalizer Waveform Bars - nestled in visible inner hemisphere */}
+            <div className="absolute top-1/2 -translate-y-1/2 right-[14px] sm:right-[26px] md:right-[38px] flex items-center gap-0.5 sm:gap-1 md:gap-1.5 h-16 sm:h-20">
+              {[14, 28, 48, 32, 68, 96, 72, 38, 88, 110, 80, 48, 102, 120, 84, 56, 36, 80].map(
+                (h, i) => (
+                  <div
+                    key={`lo-${i}`}
+                    style={{
+                      height: `${h * (animStage === 1 ? 0.65 : 0.42)}px`,
+                      animationDelay: `${i * 0.08}s`,
+                    }}
+                    className="w-0.5 sm:w-1 bg-[#ae98f5] rounded-full animate-pulse transition-all duration-300 shadow-[0_0_8px_rgba(174,152,245,0.4)]"
+                  />
+                ),
+              )}
+            </div>
+          </div>
+
+          {/* Right Sound Orbit with Glowing Waves (Anchored to Screen Edge on ALL devices) */}
+          <div
+            className={`absolute right-0 translate-x-1/2 top-[24%] sm:top-[28%] lg:top-1/2 -translate-y-1/2 w-[280px] h-[280px] sm:w-[350px] sm:h-[350px] md:w-[420px] md:h-[420px] lg:w-[480px] lg:h-[480px] pointer-events-none transition-all duration-700 z-0 ${
+              animStage >= 1
+                ? "opacity-45 sm:opacity-55 scale-100"
+                : "opacity-0 scale-75"
+            }`}
+          >
+            <Image
+              src="/figma/sound-orbit.svg"
+              alt=""
+              width={480}
+              height={480}
+              className="w-full h-full animate-spin-reverse-slow"
+            />
+            {/* Right Equalizer Waveform Bars - nestled in visible inner hemisphere */}
+            <div className="absolute top-1/2 -translate-y-1/2 left-[14px] sm:left-[26px] md:left-[38px] flex items-center gap-0.5 sm:gap-1 md:gap-1.5 h-16 sm:h-20">
+              {[36, 80, 120, 102, 48, 80, 110, 88, 38, 72, 96, 68, 32, 48, 28, 14, 48, 80].map(
+                (h, i) => (
+                  <div
+                    key={`ro-${i}`}
+                    style={{
+                      height: `${h * (animStage === 1 ? 0.65 : 0.42)}px`,
+                      animationDelay: `${i * 0.08}s`,
+                    }}
+                    className="w-0.5 sm:w-1 bg-[#ae98f5] rounded-full animate-pulse transition-all duration-300 shadow-[0_0_8px_rgba(174,152,245,0.4)]"
+                  />
+                ),
+              )}
+            </div>
+          </div>
+
           {/* Top Header - Slides down in Stage 3 */}
           <header
-            className={`flex items-center justify-between w-full pb-3 sm:pb-4 border-b border-[#e2e2e8] dark:border-[#35353d]/40 shrink-0 transition-all duration-700 ${
+            className={`flex items-center justify-between w-full pb-2.5 sm:pb-3.5 border-b border-[#e2e2e8] dark:border-[#35353d]/40 shrink-0 transition-all duration-700 z-20 ${
               animStage >= 3
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 -translate-y-6 pointer-events-none"
             }`}
           >
-            <div className="flex items-center gap-2.5 sm:gap-3">
-              <div className="relative w-7 h-7 sm:w-8 sm:h-8 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="relative w-6 h-6 sm:w-8 sm:h-8 shrink-0">
                 <Image
                   src="/figma/reverse-audio-symbol.svg"
                   alt="Rev3rse logo"
@@ -260,12 +324,12 @@ export function ModeSelector({
                   priority
                 />
               </div>
-              <span className="font-bold tracking-wider text-[#61616c] dark:text-[#aaa9b4] text-[11px] sm:text-xs uppercase">
+              <span className="font-bold tracking-wider text-[#61616c] dark:text-[#aaa9b4] text-[10px] sm:text-xs uppercase">
                 THE AUDIO PARTY GAME
               </span>
             </div>
 
-            <div className="flex items-center gap-3 sm:gap-6">
+            <div className="flex items-center gap-2.5 sm:gap-5">
               <button
                 type="button"
                 onClick={() => {
@@ -282,22 +346,22 @@ export function ModeSelector({
                     introAudioRef.current?.pause()
                   }
                 }}
-                className={`hidden md:flex items-center gap-2 text-xs font-semibold border px-3 py-1.5 rounded-full transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-semibold border px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full transition-all cursor-pointer ${
                   soundEnabled
                     ? "border-[#d3ff62] text-[#d3ff62] bg-[#d3ff62]/10 shadow-[0_0_15px_rgba(211,255,98,0.25)]"
                     : "border-[#e2e2e8] dark:border-[#35353d] text-[#61616c] dark:text-[#aaa9b4] hover:border-[#d3ff62]"
                 }`}
                 title="Toggle sound effects"
               >
-                <Volume2 className={`h-3.5 w-3.5 ${soundEnabled ? "text-[#d3ff62]" : ""}`} />
-                <span>{soundEnabled ? "SOUND ON" : "TAP FOR SOUND"}</span>
+                <Volume2 className={`h-3 w-3 sm:h-3.5 sm:w-3.5 ${soundEnabled ? "text-[#d3ff62]" : ""}`} />
+                <span>{soundEnabled ? "SOUND ON" : "SOUND FX"}</span>
               </button>
               <ThemeToggle />
             </div>
           </header>
 
-          {/* Central Brand Stage - Seamless Coded Intro Transition */}
-          <main className="relative flex flex-col items-center justify-center text-center py-6 sm:py-8 md:py-10 my-auto w-full max-w-4xl mx-auto">
+          {/* Central Brand Stage - Viewport Fit & Vertically Balanced */}
+          <main className="relative flex-1 flex flex-col items-center justify-center text-center py-2 sm:py-4 md:py-6 my-auto min-h-0 w-full max-w-4xl mx-auto z-10">
             {/* Stage 0 & 1: Center Glowing Rewind Emblem */}
             <div
               className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none transition-all duration-700 z-30 ${
@@ -307,8 +371,8 @@ export function ModeSelector({
               }`}
             >
               <div className="relative flex items-center justify-center">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[#d3ff62] shadow-[0_0_60px_rgba(211,255,98,0.85)] flex items-center justify-center animate-neon-pulse">
-                  <div className="w-8 h-8 relative">
+                <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-[#d3ff62] shadow-[0_0_60px_rgba(211,255,98,0.85)] flex items-center justify-center animate-neon-pulse">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 relative">
                     <Image
                       src="/figma/reverse-audio-symbol.svg"
                       alt="Reverse Audio"
@@ -322,111 +386,15 @@ export function ModeSelector({
               </div>
             </div>
 
-            {/* Stage 1 & 2: Stereo Waveform Frequency Bars (Expanding outward horizontally) */}
-            <div
-              className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl flex items-center justify-between px-6 pointer-events-none transition-all duration-700 z-10 ${
-                animStage >= 1
-                  ? "opacity-100 scale-100"
-                  : "opacity-0 scale-75"
-              }`}
-            >
-              {/* Left Stereo Spectrum */}
-              <div className="flex items-center gap-1 sm:gap-1.5 h-20 opacity-80">
-                {[18, 36, 56, 30, 75, 98, 65, 42, 85, 115, 78, 50, 95, 120, 80, 52, 34, 76].map(
-                  (h, i) => (
-                    <div
-                      key={`l-${i}`}
-                      style={{
-                        height: `${h * (animStage === 1 ? 0.75 : 0.5)}px`,
-                        animationDelay: `${i * 0.08}s`,
-                      }}
-                      className="w-1 sm:w-1.5 bg-[#ae98f5] rounded-full transition-all duration-300 animate-pulse shadow-[0_0_10px_rgba(174,152,245,0.4)]"
-                    />
-                  ),
-                )}
-              </div>
-
-              {/* Center Spacer during stage 1 */}
-              <div className="w-20 sm:w-28 shrink-0" />
-
-              {/* Right Stereo Spectrum */}
-              <div className="flex items-center gap-1 sm:gap-1.5 h-20 opacity-80">
-                {[76, 34, 52, 80, 120, 95, 50, 78, 115, 85, 42, 65, 98, 75, 30, 56, 36, 18].map(
-                  (h, i) => (
-                    <div
-                      key={`r-${i}`}
-                      style={{
-                        height: `${h * (animStage === 1 ? 0.75 : 0.5)}px`,
-                        animationDelay: `${i * 0.08}s`,
-                      }}
-                      className="w-1 sm:w-1.5 bg-[#ae98f5] rounded-full transition-all duration-300 animate-pulse shadow-[0_0_10px_rgba(174,152,245,0.4)]"
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* Stage 2: Concentric Sonic Ripples */}
+            {/* Stage 2: Concentric Sonic Ripples (Mathematically Centered) */}
             {animStage >= 2 && animStage < 4 && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-0">
-                <div className="w-[300px] h-[300px] sm:w-[480px] sm:h-[480px] rounded-full border-2 border-[#ae98f5]/40 animate-sonic-ripple-1 absolute -top-[150px] -left-[150px] sm:-top-[240px] sm:-left-[240px]" />
-                <div className="w-[300px] h-[300px] sm:w-[480px] sm:h-[480px] rounded-full border-2 border-[#d3ff62]/40 animate-sonic-ripple-2 absolute -top-[150px] -left-[150px] sm:-top-[240px] sm:-left-[240px]" />
-                <div className="w-[300px] h-[300px] sm:w-[480px] sm:h-[480px] rounded-full border-2 border-[#ae98f5]/30 animate-sonic-ripple-3 absolute -top-[150px] -left-[150px] sm:-top-[240px] sm:-left-[240px]" />
-                <div className="w-[300px] h-[300px] sm:w-[480px] sm:h-[480px] rounded-full border-2 border-[#d3ff62]/30 animate-sonic-ripple-4 absolute -top-[150px] -left-[150px] sm:-top-[240px] sm:-left-[240px]" />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[240px] h-[240px] sm:w-[360px] sm:h-[360px] md:w-[460px] md:h-[460px] pointer-events-none z-0 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border-2 border-[#ae98f5]/40 animate-sonic-ripple-1" />
+                <div className="absolute inset-0 rounded-full border-2 border-[#d3ff62]/40 animate-sonic-ripple-2" />
+                <div className="absolute inset-0 rounded-full border-2 border-[#ae98f5]/30 animate-sonic-ripple-3" />
+                <div className="absolute inset-0 rounded-full border-2 border-[#d3ff62]/30 animate-sonic-ripple-4" />
               </div>
             )}
-
-            {/* Left Sound Orbit with Glowing Waves (Desktop & Ultra-wide) */}
-            <div
-              className={`hidden 2xl:block absolute left-[-160px] top-1/2 -translate-y-1/2 w-[380px] h-[380px] pointer-events-none transition-all duration-700 ${
-                animStage >= 1 ? "opacity-35" : "opacity-0"
-              }`}
-            >
-              <Image
-                src="/figma/sound-orbit.svg"
-                alt=""
-                width={380}
-                height={380}
-                className="w-full h-full animate-spin-slow"
-              />
-              <div className="absolute top-1/2 -translate-y-1/2 left-[45px] flex items-center gap-1 h-20">
-                {[14, 28, 48, 32, 68, 96, 72, 38, 88, 110, 80, 48, 102, 120, 84, 56, 36, 80].map(
-                  (h, i) => (
-                    <div
-                      key={i}
-                      style={{ height: `${h * 0.55}px` }}
-                      className="w-1 bg-[#ae98f5] rounded-full animate-pulse"
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* Right Sound Orbit with Glowing Waves (Desktop & Ultra-wide) */}
-            <div
-              className={`hidden 2xl:block absolute right-[-160px] top-1/2 -translate-y-1/2 w-[380px] h-[380px] pointer-events-none transition-all duration-700 ${
-                animStage >= 1 ? "opacity-35" : "opacity-0"
-              }`}
-            >
-              <Image
-                src="/figma/sound-orbit.svg"
-                alt=""
-                width={380}
-                height={380}
-                className="w-full h-full animate-spin-reverse-slow"
-              />
-              <div className="absolute top-1/2 -translate-y-1/2 right-[45px] flex items-center gap-1 h-20">
-                {[36, 80, 120, 102, 48, 80, 110, 88, 38, 72, 96, 68, 32, 48, 28, 14].map(
-                  (h, i) => (
-                    <div
-                      key={i}
-                      style={{ height: `${h * 0.55}px` }}
-                      className="w-1 bg-[#ae98f5] rounded-full animate-pulse"
-                    />
-                  ),
-                )}
-              </div>
-            </div>
 
             {/* Tilted 3D App Icon - Zooms forward and tilts in Stage 2 */}
             <div
@@ -435,15 +403,15 @@ export function ModeSelector({
                 startIntroSequence(true)
                 if (onReplayIntro) onReplayIntro()
               }}
-              className={`mb-4 sm:mb-6 transition-all duration-700 hover:scale-105 cursor-pointer shrink-0 group z-20 ${
+              className={`mb-2 sm:mb-3.5 md:mb-5 transition-all duration-700 hover:scale-105 cursor-pointer shrink-0 group z-20 ${
                 animStage >= 2
                   ? "opacity-100 scale-100 translate-y-0"
                   : "opacity-0 scale-50 translate-y-8 pointer-events-none"
               }`}
               title="Click to replay intro animation"
             >
-              <div className="-rotate-6 inline-block bg-[#f4f4f7] dark:bg-[#1b1b20] border-2 border-[#e2e2e8] dark:border-[#35353d] group-hover:border-[#d3ff62] rounded-[24px] sm:rounded-[32px] p-2.5 sm:p-3 shadow-2xl shadow-black/30 dark:shadow-black/80 transition-colors">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 relative">
+              <div className="-rotate-6 inline-block bg-[#f4f4f7] dark:bg-[#1b1b20] border-2 border-[#e2e2e8] dark:border-[#35353d] group-hover:border-[#d3ff62] rounded-[18px] sm:rounded-[26px] md:rounded-[32px] p-2 sm:p-2.5 md:p-3 shadow-2xl shadow-black/30 dark:shadow-black/80 transition-colors">
+                <div className="w-13 h-13 sm:w-16 sm:h-16 md:w-20 md:h-20 lg:w-24 lg:h-24 relative">
                   <Image
                     src="/figma/reverse-audio-big.svg"
                     alt="Rev3rse App Icon"
@@ -458,7 +426,7 @@ export function ModeSelector({
 
             {/* Fluid Responsive Wordmark Title - Impacts in Stage 2 */}
             <h1
-              className={`text-5xl sm:text-7xl md:text-8xl lg:text-9xl xl:text-[120px] font-black tracking-tight leading-[0.95] mb-2 sm:mb-3 transition-all duration-700 z-20 ${
+              className={`text-5xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl font-black tracking-tight leading-[0.92] mb-1 sm:mb-2 md:mb-3 shrink-0 transition-all duration-700 z-20 ${
                 animStage >= 2
                   ? "opacity-100 scale-100 translate-y-0 drop-shadow-[0_0_35px_rgba(211,255,98,0.25)]"
                   : "opacity-0 scale-90 translate-y-6"
@@ -473,7 +441,7 @@ export function ModeSelector({
 
             {/* Tagline Badge - Unfurls in Stage 3 */}
             <p
-              className={`font-bold text-[11px] sm:text-xs md:text-sm tracking-widest text-[#72a800] dark:text-[#d3ff62] uppercase mb-3 sm:mb-4 transition-all duration-700 z-20 ${
+              className={`font-bold text-[10px] sm:text-xs md:text-sm tracking-widest text-[#72a800] dark:text-[#d3ff62] uppercase mb-1.5 sm:mb-2.5 md:mb-3.5 shrink-0 transition-all duration-700 z-20 ${
                 animStage >= 3
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-3"
@@ -484,7 +452,7 @@ export function ModeSelector({
 
             {/* Subtitle Description - Unfurls in Stage 3 */}
             <div
-              className={`text-sm sm:text-base md:text-lg max-w-md mx-auto font-normal leading-relaxed mb-6 sm:mb-8 px-4 transition-all duration-700 z-20 ${
+              className={`text-xs sm:text-sm md:text-base max-w-[280px] sm:max-w-md mx-auto font-normal leading-relaxed mb-3.5 sm:mb-5 md:mb-7 px-2 shrink-0 transition-all duration-700 z-20 ${
                 animStage >= 3
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-4"
@@ -500,7 +468,7 @@ export function ModeSelector({
 
             {/* Main CTA Button: Transitions to Full How To Play Page */}
             <div
-              className={`flex flex-col items-center gap-2.5 w-full max-w-xs sm:max-w-none transition-all duration-700 z-20 ${
+              className={`flex flex-col items-center gap-1.5 sm:gap-2 w-full max-w-xs sm:max-w-none transition-all duration-700 z-20 shrink-0 ${
                 animStage >= 3
                   ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
                   : "opacity-0 scale-90 translate-y-6 pointer-events-none"
@@ -512,13 +480,13 @@ export function ModeSelector({
                   sfx.playClick()
                   setView("how-to-play")
                 }}
-                className="w-full sm:w-auto bg-[#d3ff62] text-[#111113] font-bold text-base sm:text-lg h-12 sm:h-14 px-8 rounded-xl flex items-center justify-center gap-3 sm:gap-4 hover:bg-[#b8f533] active:scale-[0.98] transition-all shadow-xl shadow-[#d3ff62]/25 cursor-pointer group"
+                className="w-full sm:w-auto bg-[#d3ff62] text-[#111113] font-bold text-sm sm:text-base md:text-lg h-11 sm:h-13 md:h-14 px-7 sm:px-9 rounded-xl flex items-center justify-center gap-3 sm:gap-4 hover:bg-[#b8f533] active:scale-[0.98] transition-all shadow-xl shadow-[#d3ff62]/25 cursor-pointer group"
               >
                 <span>Let&apos;s hear it</span>
-                <ArrowUpRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                <ArrowUpRight className="h-4.5 w-4.5 sm:h-5 sm:w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </button>
 
-              <p className="text-[11px] sm:text-xs text-[#8e8d99] dark:text-[#71717d] font-medium">
+              <p className="text-[10px] sm:text-xs text-[#8e8d99] dark:text-[#71717d] font-medium">
                 Your voice is the only equipment.
               </p>
             </div>
@@ -526,14 +494,14 @@ export function ModeSelector({
 
           {/* Footer Bar - Slides up in Stage 3 */}
           <footer
-            className={`flex flex-col sm:flex-row items-center justify-between border-t border-[#e2e2e8] dark:border-[#35353d]/40 pt-3 sm:pt-4 text-[11px] sm:text-xs text-[#8e8d99] dark:text-[#71717d] font-medium gap-2.5 shrink-0 transition-all duration-700 ${
+            className={`flex flex-col sm:flex-row items-center justify-between border-t border-[#e2e2e8] dark:border-[#35353d]/40 pt-2 sm:pt-3 text-[10px] sm:text-xs text-[#8e8d99] dark:text-[#71717d] font-medium gap-1.5 sm:gap-2.5 shrink-0 z-20 transition-all duration-700 ${
               animStage >= 3
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-6 pointer-events-none"
             }`}
           >
             <span>GOOD COMPANY. BAD IMPRESSIONS.</span>
-            <div className="flex items-center gap-3 tracking-wider">
+            <div className="flex items-center gap-2.5 sm:gap-3 tracking-wider">
               <button
                 type="button"
                 onClick={() => {
