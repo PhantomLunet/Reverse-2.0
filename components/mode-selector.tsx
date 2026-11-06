@@ -330,8 +330,7 @@ export function ModeSelector({
               </span>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3.5">
-              <PwaInstallPrompt />
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 type="button"
                 onClick={() => {
@@ -503,7 +502,9 @@ export function ModeSelector({
             }`}
           >
             <span>GOOD COMPANY. BAD IMPRESSIONS.</span>
-            <div className="flex items-center gap-2.5 sm:gap-3 tracking-wider">
+            <div className="flex items-center gap-2 sm:gap-3 tracking-wider flex-wrap justify-center">
+              <PwaInstallPrompt variant="footer" />
+              <span>•</span>
               <button
                 type="button"
                 onClick={() => {

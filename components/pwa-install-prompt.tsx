@@ -14,7 +14,15 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>
 }
 
-export function PwaInstallPrompt() {
+interface PwaInstallPromptProps {
+  variant?: "header" | "footer"
+  className?: string
+}
+
+export function PwaInstallPrompt({
+  variant = "header",
+  className = "",
+}: PwaInstallPromptProps) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isStandalone, setIsStandalone] = useState<boolean>(false)
   const [isIOS, setIsIOS] = useState<boolean>(false)
@@ -94,18 +102,30 @@ export function PwaInstallPrompt() {
 
   return (
     <>
-      {/* 1. Header Quick Install Pill */}
-      <button
-        type="button"
-        onClick={handleInstallClick}
-        className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-bold border border-[#35353d] hover:border-[#d3ff62] text-[#f5f4ed] bg-[#1b1b20]/90 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full transition-all shadow-md hover:scale-105 cursor-pointer group"
-        title="Add Rev3rse to your home screen"
-      >
-        <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#d3ff62] group-hover:animate-bounce" />
-        <span className="tracking-wide">
-          <span className="hidden sm:inline">ADD TO </span>HOME SCREEN
-        </span>
-      </button>
+      {/* 1. Header or Footer Quick Install Button */}
+      {variant === "footer" ? (
+        <button
+          type="button"
+          onClick={handleInstallClick}
+          className={`inline-flex items-center gap-1 hover:text-[#111113] dark:hover:text-[#f5f4ed] text-[#72a800] dark:text-[#d3ff62] font-bold transition-colors cursor-pointer group ${className}`}
+          title="Add Rev3rse to your home screen"
+        >
+          <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5 group-hover:translate-y-0.5 transition-transform" />
+          <span>ADD TO HOME SCREEN</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleInstallClick}
+          className={`flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-bold border border-[#35353d] hover:border-[#d3ff62] text-[#f5f4ed] bg-[#1b1b20]/90 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full transition-all shadow-md hover:scale-105 cursor-pointer group ${className}`}
+          title="Add Rev3rse to your home screen"
+        >
+          <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#d3ff62] group-hover:animate-bounce" />
+          <span className="tracking-wide">
+            <span className="hidden sm:inline">ADD TO </span>HOME SCREEN
+          </span>
+        </button>
+      )}
 
       {/* 2. Success Toast if just installed */}
       {installedSuccess && (
@@ -220,3 +240,4 @@ export function PwaInstallPrompt() {
     </>
   )
 }
+
