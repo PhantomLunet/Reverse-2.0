@@ -22,9 +22,10 @@ import {
 
 interface ModeSelectorProps {
   onSelectMode: (mode: GameMode) => void
+  onReplayIntro?: () => void
 }
 
-export function ModeSelector({ onSelectMode }: ModeSelectorProps) {
+export function ModeSelector({ onSelectMode, onReplayIntro }: ModeSelectorProps) {
   // Navigation: intro -> how-to-play -> modes
   const [view, setView] = useState<"intro" | "how-to-play" | "modes">("intro")
   const [activeDemo, setActiveDemo] = useState<string | null>(null)
@@ -204,9 +205,18 @@ export function ModeSelector({ onSelectMode }: ModeSelectorProps) {
               </div>
             </div>
 
-            {/* Tilted 3D App Icon */}
-            <div className="mb-4 sm:mb-6 transition-transform duration-300 hover:scale-105 cursor-pointer shrink-0">
-              <div className="-rotate-6 inline-block bg-[#f4f4f7] dark:bg-[#1b1b20] border-2 border-[#e2e2e8] dark:border-[#35353d] rounded-[24px] sm:rounded-[32px] p-2.5 sm:p-3 shadow-xl shadow-black/10 dark:shadow-black/70">
+            {/* Tilted 3D App Icon (Replay Intro Animation on click) */}
+            <div
+              onClick={() => {
+                if (onReplayIntro) {
+                  sfx.playClick()
+                  onReplayIntro()
+                }
+              }}
+              className="mb-4 sm:mb-6 transition-transform duration-300 hover:scale-105 cursor-pointer shrink-0 group"
+              title="Click to replay intro animation"
+            >
+              <div className="-rotate-6 inline-block bg-[#f4f4f7] dark:bg-[#1b1b20] border-2 border-[#e2e2e8] dark:border-[#35353d] group-hover:border-[#d3ff62] rounded-[24px] sm:rounded-[32px] p-2.5 sm:p-3 shadow-xl shadow-black/10 dark:shadow-black/70 transition-colors">
                 <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 relative">
                   <Image
                     src="/figma/reverse-audio-big.svg"
@@ -260,6 +270,21 @@ export function ModeSelector({ onSelectMode }: ModeSelectorProps) {
           <footer className="flex flex-col sm:flex-row items-center justify-between border-t border-[#e2e2e8] dark:border-[#35353d]/40 pt-3 sm:pt-4 text-[11px] sm:text-xs text-[#8e8d99] dark:text-[#71717d] font-medium gap-2.5 shrink-0">
             <span>GOOD COMPANY. BAD IMPRESSIONS.</span>
             <div className="flex items-center gap-3 tracking-wider">
+              {onReplayIntro && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sfx.playClick()
+                      onReplayIntro()
+                    }}
+                    className="hover:text-[#111113] dark:hover:text-[#f5f4ed] text-[#72a800] dark:text-[#d3ff62] font-bold transition-colors cursor-pointer"
+                  >
+                    INTRO
+                  </button>
+                  <span>•</span>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => setView("how-to-play")}
