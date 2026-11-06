@@ -17,10 +17,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#111113" },
-  ],
+  themeColor: "#111113",
 }
 
 export const metadata: Metadata = {
@@ -44,9 +41,19 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} font-sans`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} font-sans dark`}
+      style={{ colorScheme: "dark" }}
+    >
       <body className="bg-background text-foreground antialiased min-h-screen">
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          storageKey="rev3rse-theme"
+        >
           {children}
         </ThemeProvider>
         <Analytics />
