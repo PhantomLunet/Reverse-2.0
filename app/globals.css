@@ -94,3 +94,90 @@
     @apply bg-background text-foreground antialiased selection:bg-primary/30 selection:text-foreground w-full max-w-full overflow-x-hidden min-h-[100dvh];
   }
 }
+
+/* ======================================================== */
+/* Rev3rse Cinematic Intro & Ambient Soundwaves Animations */
+/* ======================================================== */
+
+@keyframes sonic-ripple {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.9;
+    border-width: 3px;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@keyframes neon-glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 16px rgba(211, 255, 98, 0.75)) drop-shadow(0 0 35px rgba(211, 255, 98, 0.4));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 28px rgba(211, 255, 98, 0.95)) drop-shadow(0 0 55px rgba(211, 255, 98, 0.6));
+    transform: scale(1.08);
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-reverse-slow {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes equalizer-dance {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-sonic-ripple-1 {
+  animation: sonic-ripple 2.4s cubic-bezier(0.1, 0.8, 0.2, 1) infinite;
+}
+
+.animate-sonic-ripple-2 {
+  animation: sonic-ripple 2.4s cubic-bezier(0.1, 0.8, 0.2, 1) infinite 0.5s;
+}
+
+.animate-sonic-ripple-3 {
+  animation: sonic-ripple 2.4s cubic-bezier(0.1, 0.8, 0.2, 1) infinite 1.0s;
+}
+
+.animate-sonic-ripple-4 {
+  animation: sonic-ripple 2.4s cubic-bezier(0.1, 0.8, 0.2, 1) infinite 1.5s;
+}
+
+.animate-neon-pulse {
+  animation: neon-glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 28s linear infinite;
+}
+
+.animate-spin-reverse-slow {
+  animation: spin-reverse-slow 28s linear infinite;
+}
+
