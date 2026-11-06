@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import type { GameMode } from "@/app/page"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt"
 import { sfx } from "@/lib/sound-effects"
 import Image from "next/image"
 import {
@@ -329,7 +330,8 @@ export function ModeSelector({
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5 sm:gap-5">
+            <div className="flex items-center gap-2 sm:gap-3.5">
+              <PwaInstallPrompt />
               <button
                 type="button"
                 onClick={() => {
@@ -564,7 +566,8 @@ export function ModeSelector({
               </span>
             </button>
 
-            <div className="flex items-center gap-3 sm:gap-6">
+            <div className="flex items-center gap-2.5 sm:gap-5">
+              <PwaInstallPrompt />
               <div className="hidden md:flex items-center gap-6 text-sm font-medium">
                 <span className="text-[#111113] dark:text-[#f5f4ed] font-bold border-b-2 border-[#d3ff62] pb-1">
                   How to play
@@ -1082,7 +1085,8 @@ export function ModeSelector({
               </span>
             </button>
 
-            <div className="flex items-center gap-3 sm:gap-6">
+            <div className="flex items-center gap-2.5 sm:gap-5">
+              <PwaInstallPrompt />
               <button
                 type="button"
                 onClick={() => {

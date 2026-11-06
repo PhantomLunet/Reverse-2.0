@@ -8,7 +8,8 @@
 /* Rev3rse Theme Design Tokens - Dark Mode is Primary */
 /* ======================================================== */
 
-:root, .dark {
+:root,
+.dark {
   --background: #111113;
   --foreground: #f5f4ed;
   --card: #1b1b20;
@@ -91,11 +92,13 @@
   * {
     @apply border-border outline-ring/50 box-border;
   }
+
   html {
     @apply w-full max-w-full overflow-x-hidden;
     -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;
   }
+
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/30 selection:text-foreground w-full max-w-full overflow-x-hidden min-h-[100dvh];
   }
@@ -111,9 +114,11 @@
     opacity: 0.9;
     border-width: 3px;
   }
+
   50% {
     opacity: 0.45;
   }
+
   100% {
     transform: scale(2.6);
     opacity: 0;
@@ -122,10 +127,13 @@
 }
 
 @keyframes neon-glow-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     filter: drop-shadow(0 0 16px rgba(211, 255, 98, 0.75)) drop-shadow(0 0 35px rgba(211, 255, 98, 0.4));
     transform: scale(1);
   }
+
   50% {
     filter: drop-shadow(0 0 28px rgba(211, 255, 98, 0.95)) drop-shadow(0 0 55px rgba(211, 255, 98, 0.6));
     transform: scale(1.08);
@@ -136,6 +144,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -145,15 +154,19 @@
   from {
     transform: rotate(360deg);
   }
+
   to {
     transform: rotate(0deg);
   }
 }
 
 @keyframes equalizer-dance {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scaleY(0.3);
   }
+
   50% {
     transform: scaleY(1);
   }
@@ -186,4 +199,3 @@
 .animate-spin-reverse-slow {
   animation: spin-reverse-slow 28s linear infinite;
 }
-

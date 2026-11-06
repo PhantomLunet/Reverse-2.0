@@ -24,14 +24,36 @@ export const metadata: Metadata = {
   title: "Rev3rse - The Audio Party Game",
   description: "A normal phrase. A backward voice. A very good reason to lose it.",
   generator: "v0.app",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Rev3rse",
+  },
   icons: {
     icon: [
+      {
+        url: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
       {
         url: "/figma/reverse-audio-symbol.svg",
         type: "image/svg+xml",
       },
     ],
-    apple: "/figma/reverse-audio-symbol.svg",
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
   },
 }
 
