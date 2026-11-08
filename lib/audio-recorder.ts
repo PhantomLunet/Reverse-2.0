@@ -47,6 +47,34 @@ export function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([view], { type: "audio/wav" })
 }
 
+// Fast linear-average downsampler to 24kHz for speech network transmission
+export function downsampleTo24k(
+  samples: Float32Array,
+  inputSampleRate: number,
+): { samples: Float32Array; sampleRate: number } {
+  if (inputSampleRate <= 24000) {
+    return { samples, sampleRate: inputSampleRate }
+  }
+  const ratio = inputSampleRate / 24000
+  const newLength = Math.round(samples.length / ratio)
+  const result = new Float32Array(newLength)
+  let offsetResult = 0
+  let offsetBuffer = 0
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio)
+    let accum = 0
+    let count = 0
+    for (let i = offsetBuffer; i < nextOffsetBuffer && i < samples.length; i++) {
+      accum += samples[i]
+      count++
+    }
+    result[offsetResult] = count > 0 ? accum / count : samples[offsetBuffer]
+    offsetResult++
+    offsetBuffer = nextOffsetBuffer
+  }
+  return { samples: result, sampleRate: 24000 }
+}
+
 // Convert Blob to Base64 fast without string iteration locks
 export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -224,7 +252,9 @@ export class PcmAudioRecorder {
     audioBuffer.copyToChannel(mergedSamples, 0)
 
     // Encode to WAV Blob and Base64 string for network/storage
-    const wavBlob = encodeWAV(mergedSamples, sampleRate)
+    // Downsample to 24kHz if recorded at 44.1kHz or 48kHz for 50% smaller payloads and instant transmission
+    const { samples: wavSamples, sampleRate: wavRate } = downsampleTo24k(mergedSamples, sampleRate)
+    const wavBlob = encodeWAV(wavSamples, wavRate)
     const base64Wav = await blobToBase64(wavBlob)
 
     return {

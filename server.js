@@ -200,7 +200,7 @@ app.prepare().then(() => {
       });
     });
 
-    // Join an existing room
+    // Join an existing room (with seamless reconnect support)
     socket.on("join-room", ({ roomCode, playerName }, callback) => {
       const code = (roomCode || "").toUpperCase().trim();
       const room = rooms.get(code);
@@ -210,6 +210,69 @@ app.prepare().then(() => {
         return;
       }
 
+      const pName = (playerName || "").trim();
+      if (!pName) {
+        callback({ success: false, error: "Please enter a valid nickname." });
+        return;
+      }
+
+      // Check if this player is already registered (reconnecting or refreshed)
+      const existingPlayer = room.players.find(
+        (p) => p.name.toLowerCase() === pName.toLowerCase()
+      );
+
+      if (existingPlayer) {
+        // Player rejoining! Update their active socket ID
+        existingPlayer.id = socket.id;
+        if (existingPlayer.isHost) {
+          room.host.id = socket.id;
+        }
+
+        socket.join(code);
+        socket.roomCode = code;
+
+        console.log(`[Room] ${pName} reconnected to room ${code} (state: ${room.gameState})`);
+
+        // Broadcast updated roster to all clients
+        io.to(code).emit("player-joined", {
+          players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
+          newPlayer: pName,
+        });
+
+        // Provide complete room & game state so the reconnecting player can jump right in
+        callback({
+          success: true,
+          players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
+          gameState: room.gameState,
+          round: room.round,
+          speaker: room.currentSpeaker ? { name: room.currentSpeaker.name, id: room.currentSpeaker.id } : null,
+          targetText: room.targetText,
+          originalAudio: room.originalAudio,
+          currentTurnPlayer: room.currentTurnPlayer ? { name: room.currentTurnPlayer.name, id: room.currentTurnPlayer.id } : null,
+        });
+
+        // If game is in progress, also re-dispatch the current phase event to this socket
+        if (room.gameState === "selecting-speaker" && room.currentSpeaker) {
+          socket.emit("game-started", {
+            speaker: { name: room.currentSpeaker.name, id: room.currentSpeaker.id },
+            round: room.round,
+            totalPlayers: room.players.length,
+          });
+        } else if (room.gameState === "playing-reversed" && room.originalAudio) {
+          socket.emit("original-audio-submitted", {
+            originalAudio: room.originalAudio,
+            audioData: room.originalAudio,
+            speakerName: room.currentSpeaker ? room.currentSpeaker.name : "Speaker",
+            speaker: room.currentSpeaker ? room.currentSpeaker.name : "Speaker",
+            speakerId: room.currentSpeaker ? room.currentSpeaker.id : null,
+            targetText: room.targetText,
+            totalImitators: room.turnOrder ? room.turnOrder.length : 0,
+          });
+        }
+        return;
+      }
+
+      // New player trying to join an already started game
       if (room.gameState !== "lobby") {
         callback({ success: false, error: "Game already in progress. Please wait for the next round." });
         return;
@@ -220,35 +283,77 @@ app.prepare().then(() => {
         return;
       }
 
-      if (room.players.some((p) => p.name.toLowerCase() === playerName.trim().toLowerCase())) {
-        callback({ success: false, error: "Name already taken. Choose a different name." });
-        return;
-      }
-
-      const player = { id: socket.id, name: playerName.trim(), isHost: false };
+      const player = { id: socket.id, name: pName, isHost: false };
       room.players.push(player);
 
       socket.join(code);
       socket.roomCode = code;
 
-      // Notify all players in the room
+      // Notify all players in the room with fresh cloned roster
       io.to(code).emit("player-joined", {
         players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
-        newPlayer: playerName.trim(),
+        newPlayer: pName,
       });
 
-      console.log(`[Room] ${playerName.trim()} joined room ${code}`);
+      console.log(`[Room] ${pName} joined room ${code} (total: ${room.players.length})`);
 
       callback({
         success: true,
         players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
+        gameState: room.gameState,
       });
+    });
+
+    // Room state synchronization heartbeat
+    socket.on("sync-room-state", ({ roomCode, playerName }, callback) => {
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
+
+      if (!room) {
+        if (callback) callback({ success: false, error: "Room not found" });
+        return;
+      }
+
+      if (playerName) {
+        const pName = playerName.trim();
+        const existing = room.players.find((p) => p.name.toLowerCase() === pName.toLowerCase());
+        if (existing) {
+          existing.id = socket.id;
+          if (existing.isHost) room.host.id = socket.id;
+          socket.join(code);
+          socket.roomCode = code;
+        }
+      }
+
+      if (callback) {
+        callback({
+          success: true,
+          players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
+          gameState: room.gameState,
+          round: room.round,
+          speaker: room.currentSpeaker ? { name: room.currentSpeaker.name, id: room.currentSpeaker.id } : null,
+          targetText: room.targetText,
+          originalAudio: room.originalAudio,
+          currentTurnPlayer: room.currentTurnPlayer ? { name: room.currentTurnPlayer.name, id: room.currentTurnPlayer.id } : null,
+          readyCount: room.readyImitators ? room.readyImitators.size : 0,
+          totalNeeded: room.turnOrder ? room.turnOrder.length : 0,
+        });
+      }
     });
 
     // Host starts the game
     socket.on("start-game", ({ roomCode }) => {
-      const room = rooms.get(roomCode);
-      if (!room || room.host.id !== socket.id) return;
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room) return;
+
+      // Allow starting if socket matches host ID or belongs to a player marked as host
+      const isHostSocket = room.host.id === socket.id || room.players.some((p) => p.isHost && p.id === socket.id);
+      if (!isHostSocket) {
+        console.warn(`[Game] Non-host ${socket.id} attempted to start room ${code}`);
+        return;
+      }
+
       if (room.players.length < 2) {
         socket.emit("error-message", { message: "Need at least 2 players to start Party Mode." });
         return;
@@ -261,7 +366,7 @@ app.prepare().then(() => {
       room.originalAudio = null;
       room.targetText = null;
 
-      // Pick speaker (rotate or random)
+      // Pick speaker (rotate through players)
       const speakerIndex = (room.round - 1) % room.players.length;
       room.currentSpeaker = room.players[speakerIndex];
 
@@ -272,19 +377,24 @@ app.prepare().then(() => {
 
       room.currentTurnPlayer = null;
 
-      io.to(roomCode).emit("game-started", {
+      const gamePayload = {
         speaker: { name: room.currentSpeaker.name, id: room.currentSpeaker.id },
         round: room.round,
         totalPlayers: room.players.length,
-      });
+        totalImitators: room.turnOrder.length,
+      };
 
-      console.log(`[Game] Room ${roomCode} started round ${room.round}, speaker: ${room.currentSpeaker.name}`);
+      // Broadcast to entire room
+      io.to(code).emit("game-started", gamePayload);
+
+      console.log(`[Game] Room ${code} started round ${room.round}, speaker: ${room.currentSpeaker.name}`);
     });
 
     // Speaker submits their original audio & optional target text
     const handleOriginalAudio = ({ roomCode, audioData, targetText }) => {
-      const room = rooms.get(roomCode);
-      if (!room || !room.currentSpeaker || room.currentSpeaker.id !== socket.id) return;
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room || !room.currentSpeaker || (room.currentSpeaker.id !== socket.id && room.currentSpeaker.name !== (room.players.find(p => p.id === socket.id)?.name))) return;
 
       room.originalAudio = audioData;
       room.targetText = targetText || null;
@@ -303,16 +413,17 @@ app.prepare().then(() => {
       };
 
       // Notify all players (support both event names)
-      io.to(roomCode).emit("original-audio-submitted", payload);
-      io.to(roomCode).emit("original-submitted", payload);
+      io.to(code).emit("original-audio-submitted", payload);
+      io.to(code).emit("original-submitted", payload);
 
-      console.log(`[Game] Room ${roomCode}: original audio submitted by ${room.currentSpeaker.name} (phrase: "${room.targetText || 'n/a'}", waiting for ${totalNeeded} imitators)`);
+      console.log(`[Game] Room ${code}: original audio submitted by ${room.currentSpeaker.name} (phrase: "${room.targetText || 'n/a'}", waiting for ${totalNeeded} imitators)`);
     };
     socket.on("submit-original-audio", handleOriginalAudio);
 
     // Handle player confirming they are ready to imitate
     const handleReadyToImitate = ({ roomCode, playerName }) => {
-      const room = rooms.get(roomCode);
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
       if (!room || !room.turnOrder || room.gameState !== "playing-reversed") return;
 
       if (!room.readyImitators) room.readyImitators = new Set();
@@ -323,24 +434,24 @@ app.prepare().then(() => {
       const pName = playerName || (room.players.find((p) => p.id === socket.id)?.name) || "Player";
 
       // Broadcast ready count update to all players
-      io.to(roomCode).emit("imitator-ready-update", {
+      io.to(code).emit("imitator-ready-update", {
         readyCount,
         totalNeeded,
         readyPlayerId: socket.id,
         readyPlayerName: pName,
       });
 
-      console.log(`[Game] Room ${roomCode}: Imitator ready ${readyCount}/${totalNeeded} (${pName})`);
+      console.log(`[Game] Room ${code}: Imitator ready ${readyCount}/${totalNeeded} (${pName})`);
 
       // Once all contestants in turnOrder have confirmed ready, start the round!
       if (readyCount >= totalNeeded) {
-        console.log(`[Game] Room ${roomCode}: All ${totalNeeded} imitators ready! Starting turns.`);
-        io.to(roomCode).emit("all-imitators-ready", {
+        console.log(`[Game] Room ${code}: All ${totalNeeded} imitators ready! Starting turns.`);
+        io.to(code).emit("all-imitators-ready", {
           totalImitators: totalNeeded,
         });
 
         setTimeout(() => {
-          advanceToNextTurn(room, roomCode);
+          advanceToNextTurn(room, code);
         }, 500);
       }
     };
@@ -348,15 +459,18 @@ app.prepare().then(() => {
 
     // Host can force start turns if someone is inactive or taking too long
     const handleForceStartTurns = ({ roomCode }) => {
-      const room = rooms.get(roomCode);
-      if (!room || room.host.id !== socket.id || room.gameState !== "playing-reversed") return;
-      console.log(`[Game] Room ${roomCode}: Host force-started turns.`);
-      io.to(roomCode).emit("all-imitators-ready", {
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room || room.gameState !== "playing-reversed") return;
+      const isHostSocket = room.host.id === socket.id || room.players.some((p) => p.isHost && p.id === socket.id);
+      if (!isHostSocket) return;
+      console.log(`[Game] Room ${code}: Host force-started turns.`);
+      io.to(code).emit("all-imitators-ready", {
         totalImitators: room.turnOrder ? room.turnOrder.length : 1,
         forced: true,
       });
       setTimeout(() => {
-        advanceToNextTurn(room, roomCode);
+        advanceToNextTurn(room, code);
       }, 300);
     };
     socket.on("force-start-turns", handleForceStartTurns);
@@ -364,17 +478,20 @@ app.prepare().then(() => {
 
     // Host can skip an inactive player's turn
     const handleSkip = ({ roomCode }) => {
-      const room = rooms.get(roomCode);
-      if (!room || room.host.id !== socket.id) return;
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room) return;
+      const isHostSocket = room.host.id === socket.id || room.players.some((p) => p.isHost && p.id === socket.id);
+      if (!isHostSocket) return;
       if (room.currentTurnPlayer) {
-        console.log(`[Game] Room ${roomCode}: Host skipped turn for ${room.currentTurnPlayer.name}`);
+        console.log(`[Game] Room ${code}: Host skipped turn for ${room.currentTurnPlayer.name}`);
         room.audios[room.currentTurnPlayer.id] = {
           playerName: room.currentTurnPlayer.name,
           audioData: "",
           playerId: room.currentTurnPlayer.id,
           skipped: true,
         };
-        advanceToNextTurn(room, roomCode);
+        advanceToNextTurn(room, code);
       }
     };
     socket.on("skip-turn", handleSkip);
@@ -382,7 +499,8 @@ app.prepare().then(() => {
 
     // An imitator submits their imitation audio (support both events)
     const handleSubmitImitation = ({ roomCode, audioData, playerName }) => {
-      const room = rooms.get(roomCode);
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
       if (!room) return;
 
       const player = room.players.find((p) => p.id === socket.id);
@@ -398,7 +516,7 @@ app.prepare().then(() => {
       const totalImitators = room.turnOrder ? room.turnOrder.length : 1;
 
       // Notify everyone about submission progress
-      io.to(roomCode).emit("imitation-submitted", {
+      io.to(code).emit("imitation-submitted", {
         playerName: name,
         playerId: socket.id,
         submittedCount,
@@ -407,31 +525,35 @@ app.prepare().then(() => {
         turnNumber: submittedCount,
       });
 
-      console.log(`[Game] Room ${roomCode}: ${name} submitted imitation (${submittedCount}/${totalImitators})`);
+      console.log(`[Game] Room ${code}: ${name} submitted imitation (${submittedCount}/${totalImitators})`);
 
       // Automatically advance to the next player or finish!
-      advanceToNextTurn(room, roomCode);
+      advanceToNextTurn(room, code);
     };
     socket.on("submit-imitation", handleSubmitImitation);
     socket.on("submit-imitation-audio", handleSubmitImitation);
 
     // Submit rankings (support both events)
     const handleSubmitRanking = ({ roomCode, rankings }) => {
-      const room = rooms.get(roomCode);
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
       if (!room) return;
 
       if (!room.rankings) room.rankings = {};
       room.rankings[socket.id] = rankings;
 
-      checkAndComputeRankings(room, roomCode);
+      checkAndComputeRankings(room, code);
     };
     socket.on("submit-ranking", handleSubmitRanking);
     socket.on("submit-rankings", handleSubmitRanking);
 
     // Host requests new round (support both events)
     const handleNewRound = ({ roomCode }) => {
-      const room = rooms.get(roomCode);
-      if (!room || room.host.id !== socket.id) return;
+      const code = (roomCode || socket.roomCode || "").toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room) return;
+      const isHostSocket = room.host.id === socket.id || room.players.some((p) => p.isHost && p.id === socket.id);
+      if (!isHostSocket) return;
 
       room.gameState = "lobby";
       room.audios = {};
@@ -442,14 +564,16 @@ app.prepare().then(() => {
       room.currentTurnPlayer = null;
       room.turnOrder = [];
 
-      io.to(roomCode).emit("return-to-lobby", {
+      io.to(code).emit("return-to-lobby", {
         players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
       });
     };
     socket.on("new-round", handleNewRound);
     socket.on("next-round", handleNewRound);
 
-    // Handle clean room departure (Back button or disconnect)
+    // Handle room departure (Back button or disconnect with grace period)
+    const disconnectTimeouts = new Map();
+
     const handlePlayerExit = (reason = "left") => {
       const roomCode = socket.roomCode;
       if (!roomCode) return;
@@ -458,85 +582,102 @@ app.prepare().then(() => {
       if (!room) return;
 
       const disconnectedPlayer = room.players.find((p) => p.id === socket.id);
-      room.players = room.players.filter((p) => p.id !== socket.id);
+      if (!disconnectedPlayer) return;
+
+      const executeRemoval = () => {
+        // Double check if player already reconnected with a new socket ID
+        const currentP = room.players.find((p) => p.name.toLowerCase() === disconnectedPlayer.name.toLowerCase());
+        if (currentP && currentP.id !== socket.id) {
+          // Player already reconnected with another socket! Don't delete them.
+          return;
+        }
+
+        room.players = room.players.filter((p) => p.id !== socket.id);
+
+        // Clean up empty room
+        if (room.players.length === 0) {
+          rooms.delete(roomCode);
+          console.log(`[Room] Room ${roomCode} deleted (empty)`);
+          return;
+        }
+
+        // If host left, assign new host to the first remaining player
+        if (room.host.id === socket.id && room.players.length > 0) {
+          room.host = room.players[0];
+          room.players[0].isHost = true;
+        }
+
+        // Remove from turn order if game is running
+        if (room.turnOrder) {
+          room.turnOrder = room.turnOrder.filter((p) => p.id !== socket.id);
+        }
+        if (room.readyImitators) {
+          room.readyImitators.delete(socket.id);
+        }
+        if (room.rankings && room.rankings[socket.id]) {
+          delete room.rankings[socket.id];
+        }
+
+        io.to(roomCode).emit("player-left", {
+          players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
+          leftPlayer: disconnectedPlayer?.name || "Player",
+        });
+
+        console.log(`[Room] ${disconnectedPlayer?.name || socket.id} removed from room ${roomCode} (${reason})`);
+
+        // Handle in-game state resilience
+        if (room.gameState !== "lobby") {
+          // If the speaker left before submitting audio
+          if (room.currentSpeaker && room.currentSpeaker.id === socket.id && !room.originalAudio) {
+            if (room.players.length >= 2) {
+              room.currentSpeaker = room.players[0];
+              room.turnOrder = room.players.filter((p) => p.id !== room.currentSpeaker.id);
+              io.to(roomCode).emit("game-started", {
+                speaker: { name: room.currentSpeaker.name, id: room.currentSpeaker.id },
+                round: room.round,
+                totalPlayers: room.players.length,
+              });
+              io.to(roomCode).emit("error-message", {
+                message: `The speaker left. ${room.currentSpeaker.name} is now the new speaker!`,
+              });
+            } else {
+              room.gameState = "lobby";
+              io.to(roomCode).emit("return-to-lobby", {
+                players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
+              });
+            }
+            return;
+          }
+
+          if (room.currentTurnPlayer && room.currentTurnPlayer.id === socket.id) {
+            advanceToNextTurn(room, roomCode);
+          } else if (room.gameState === "playing-reversed") {
+            if (room.turnOrder && room.readyImitators && room.turnOrder.length > 0 && room.readyImitators.size >= room.turnOrder.length) {
+              advanceToNextTurn(room, roomCode);
+            } else if (room.turnOrder && Object.keys(room.audios).length >= room.turnOrder.length) {
+              finishImitations(room, roomCode);
+            }
+          } else if (room.gameState === "selecting-speaker") {
+            if (room.turnOrder && Object.keys(room.audios).length >= room.turnOrder.length) {
+              finishImitations(room, roomCode);
+            }
+          } else if (room.gameState === "results") {
+            checkAndComputeRankings(room, roomCode);
+          }
+        }
+      };
 
       socket.leave(roomCode);
       delete socket.roomCode;
 
-      // Clean up empty room
-      if (room.players.length === 0) {
-        rooms.delete(roomCode);
-        console.log(`[Room] Room ${roomCode} deleted (empty)`);
-        return;
-      }
-
-      // If host left, assign new host to the first remaining player
-      if (room.host.id === socket.id && room.players.length > 0) {
-        room.host = room.players[0];
-        room.players[0].isHost = true;
-      }
-
-      // Remove from turn order if game is running
-      if (room.turnOrder) {
-        room.turnOrder = room.turnOrder.filter((p) => p.id !== socket.id);
-      }
-      if (room.readyImitators) {
-        room.readyImitators.delete(socket.id);
-      }
-      if (room.rankings && room.rankings[socket.id]) {
-        delete room.rankings[socket.id];
-      }
-
-      io.to(roomCode).emit("player-left", {
-        players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
-        leftPlayer: disconnectedPlayer?.name || "Player",
-      });
-
-      console.log(`[Room] ${disconnectedPlayer?.name || socket.id} ${reason} room ${roomCode}`);
-
-      // Handle in-game state resilience
-      if (room.gameState !== "lobby") {
-        // If the speaker left before submitting audio
-        if (room.currentSpeaker && room.currentSpeaker.id === socket.id && !room.originalAudio) {
-          if (room.players.length >= 2) {
-            // Pick a new speaker
-            room.currentSpeaker = room.players[0];
-            room.turnOrder = room.players.filter((p) => p.id !== room.currentSpeaker.id);
-            io.to(roomCode).emit("game-started", {
-              speaker: { name: room.currentSpeaker.name, id: room.currentSpeaker.id },
-              round: room.round,
-              totalPlayers: room.players.length,
-            });
-            io.to(roomCode).emit("error-message", {
-              message: `The speaker left. ${room.currentSpeaker.name} is now the new speaker!`,
-            });
-          } else {
-            // Not enough players, return to lobby
-            room.gameState = "lobby";
-            io.to(roomCode).emit("return-to-lobby", {
-              players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
-            });
-          }
-          return;
-        }
-
-        // If the current turn player disconnected, advance
-        if (room.currentTurnPlayer && room.currentTurnPlayer.id === socket.id) {
-          advanceToNextTurn(room, roomCode);
-        } else if (room.gameState === "playing-reversed") {
-          // If we were waiting for imitators to be ready, check if all remaining are ready
-          if (room.turnOrder && room.readyImitators && room.turnOrder.length > 0 && room.readyImitators.size >= room.turnOrder.length) {
-            advanceToNextTurn(room, roomCode);
-          } else if (room.turnOrder && Object.keys(room.audios).length >= room.turnOrder.length) {
-            finishImitations(room, roomCode);
-          }
-        } else if (room.gameState === "selecting-speaker") {
-          if (room.turnOrder && Object.keys(room.audios).length >= room.turnOrder.length) {
-            finishImitations(room, roomCode);
-          }
-        } else if (room.gameState === "results") {
-          checkAndComputeRankings(room, roomCode);
-        }
+      if (reason === "left") {
+        // Explicit exit via leave button -> remove immediately
+        executeRemoval();
+      } else {
+        // Transient network disconnect -> 12-second grace period before removal
+        console.log(`[Room] ${disconnectedPlayer.name} disconnected. Holding spot for 12s...`);
+        const timer = setTimeout(executeRemoval, 12000);
+        disconnectTimeouts.set(`${roomCode}_${disconnectedPlayer.name.toLowerCase()}`, timer);
       }
     };
 

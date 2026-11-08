@@ -22,6 +22,79 @@ const ICE_SERVERS = [
   { urls: "stun:global.stun.twilio.com:3478" },
 ]
 
+// 16KB safe chunk size across all browsers for WebRTC RTCDataChannel (SCTP max packet size is 64KB)
+const CHUNK_SIZE = 16384
+
+function sendSafe(conn: any, msg: any) {
+  if (!conn) return
+  try {
+    const raw = JSON.stringify(msg)
+    if (raw.length <= CHUNK_SIZE) {
+      conn.send({ type: "raw", data: raw })
+    } else {
+      const msgId = Math.random().toString(36).substring(2, 9)
+      const total = Math.ceil(raw.length / CHUNK_SIZE)
+      for (let i = 0; i < total; i++) {
+        const chunk = raw.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
+        conn.send({
+          type: "chunk",
+          msgId,
+          index: i,
+          total,
+          chunk,
+        })
+      }
+    }
+  } catch (err) {
+    console.error("[P2P] sendSafe error:", err)
+  }
+}
+
+function createChunkReceiver(onComplete: (msg: any) => void) {
+  const buffers = new Map<string, { total: number; chunks: string[]; received: number }>()
+
+  return (rawMsg: any) => {
+    if (!rawMsg || typeof rawMsg !== "object") return
+
+    if (rawMsg.type === "raw" && typeof rawMsg.data === "string") {
+      try {
+        const parsed = JSON.parse(rawMsg.data)
+        onComplete(parsed)
+      } catch (e) {
+        console.error("[P2P] Failed to parse raw message:", e)
+      }
+      return
+    }
+
+    if (rawMsg.type === "chunk") {
+      const { msgId, index, total, chunk } = rawMsg
+      let entry = buffers.get(msgId)
+      if (!entry) {
+        entry = { total, chunks: new Array(total), received: 0 }
+        buffers.set(msgId, entry)
+      }
+      if (!entry.chunks[index]) {
+        entry.chunks[index] = chunk
+        entry.received++
+      }
+      if (entry.received >= total) {
+        buffers.delete(msgId)
+        try {
+          const fullStr = entry.chunks.join("")
+          const parsed = JSON.parse(fullStr)
+          onComplete(parsed)
+        } catch (e) {
+          console.error("[P2P] Failed to parse chunked message:", e)
+        }
+      }
+      return
+    }
+
+    // Direct object fallback
+    onComplete(rawMsg)
+  }
+}
+
 export function useSocket() {
   const [isConnected, setIsConnected] = useState(false)
   const [myId, setMyId] = useState<string | null>(null)
@@ -68,13 +141,11 @@ export function useSocket() {
   // WebRTC Host: broadcast an event to all connected player data channels AND local host
   const broadcastToRoom = useCallback(
     (event: string, payload: any) => {
-      hostConnectionsRef.current.forEach((conn) => {
+      hostConnectionsRef.current.forEach((conn, peerId) => {
         try {
-          if (conn.open) {
-            conn.send({ type: "event", event, payload })
-          }
+          sendSafe(conn, { type: "event", event, payload })
         } catch (e) {
-          console.error("[Host] Broadcast error:", e)
+          console.error(`[Host] Broadcast error to peer ${peerId}:`, e)
         }
       })
       triggerLocal(event, payload)
@@ -255,8 +326,69 @@ export function useSocket() {
       if (type === "req") {
         if (event === "join-room") {
           const { playerName } = data
+          const pName = (playerName || "").trim()
+
+          // Check if reconnecting / refreshing player
+          const existing = room.players.find(
+            (p) => p.name.toLowerCase() === pName.toLowerCase()
+          )
+
+          if (existing) {
+            existing.id = conn.peer
+            hostConnectionsRef.current.set(conn.peer, conn)
+
+            sendSafe(conn, {
+              type: "res",
+              reqId,
+              response: {
+                success: true,
+                players: [...room.players],
+                gameState: room.gameState,
+                round: room.round,
+                speaker: room.currentSpeaker,
+                targetText: room.targetText,
+                originalAudio: room.originalAudio,
+                currentTurnPlayer: room.currentTurnPlayer,
+              },
+            })
+
+            broadcastToRoom("player-joined", {
+              players: [...room.players],
+              newPlayer: pName,
+            })
+
+            // If game is running, push the current game-started or audio event so they catch up
+            if (room.gameState === "selecting-speaker" && room.currentSpeaker) {
+              sendSafe(conn, {
+                type: "event",
+                event: "game-started",
+                payload: {
+                  speaker: { name: room.currentSpeaker.name, id: room.currentSpeaker.id },
+                  round: room.round,
+                  totalPlayers: room.players.length,
+                  totalImitators: room.turnOrder ? room.turnOrder.length : 1,
+                },
+              })
+            } else if (room.gameState === "playing-reversed" && room.originalAudio) {
+              sendSafe(conn, {
+                type: "event",
+                event: "original-audio-submitted",
+                payload: {
+                  originalAudio: room.originalAudio,
+                  audioData: room.originalAudio,
+                  speakerName: room.currentSpeaker?.name || "Speaker",
+                  speaker: room.currentSpeaker?.name || "Speaker",
+                  speakerId: room.currentSpeaker?.id,
+                  targetText: room.targetText,
+                  totalImitators: room.turnOrder ? room.turnOrder.length : 0,
+                },
+              })
+            }
+            return
+          }
+
           if (room.gameState !== "lobby") {
-            conn.send({
+            sendSafe(conn, {
               type: "res",
               reqId,
               response: { success: false, error: "Game already in progress. Please wait for the next round." },
@@ -265,7 +397,7 @@ export function useSocket() {
           }
 
           if (room.players.length >= 12) {
-            conn.send({
+            sendSafe(conn, {
               type: "res",
               reqId,
               response: { success: false, error: "Room is full (max 12 players)." },
@@ -273,28 +405,45 @@ export function useSocket() {
             return
           }
 
-          if (room.players.some((p) => p.name.toLowerCase() === playerName.trim().toLowerCase())) {
-            conn.send({
-              type: "res",
-              reqId,
-              response: { success: false, error: "Name already taken. Choose a different name." },
-            })
-            return
-          }
-
-          const newPlayer = { id: conn.peer, name: playerName.trim(), isHost: false }
+          const newPlayer = { id: conn.peer, name: pName, isHost: false }
           room.players.push(newPlayer)
           hostConnectionsRef.current.set(conn.peer, conn)
 
-          conn.send({
+          sendSafe(conn, {
             type: "res",
             reqId,
-            response: { success: true, players: room.players },
+            response: { success: true, players: [...room.players], gameState: room.gameState },
           })
 
           broadcastToRoom("player-joined", {
-            players: room.players,
-            newPlayer: playerName.trim(),
+            players: [...room.players],
+            newPlayer: pName,
+          })
+        } else if (event === "sync-room-state") {
+          if (data?.playerName) {
+            const pName = data.playerName.trim()
+            const existing = room.players.find((p) => p.name.toLowerCase() === pName.toLowerCase())
+            if (existing) {
+              existing.id = conn.peer
+              hostConnectionsRef.current.set(conn.peer, conn)
+            }
+          }
+
+          sendSafe(conn, {
+            type: "res",
+            reqId,
+            response: {
+              success: true,
+              players: [...room.players],
+              gameState: room.gameState,
+              round: room.round,
+              speaker: room.currentSpeaker,
+              targetText: room.targetText,
+              originalAudio: room.originalAudio,
+              currentTurnPlayer: room.currentTurnPlayer,
+              readyCount: room.readyImitators ? room.readyImitators.length : 0,
+              totalNeeded: room.turnOrder ? room.turnOrder.length : 0,
+            },
           })
         } else if (event === "submit-original-audio") {
           room.originalAudio = data.audioData
@@ -472,14 +621,17 @@ export function useSocket() {
           hostPeer.on("connection", (conn: any) => {
             console.log("[P2P Host] New peer connected:", conn.peer)
 
-            // Immediately attach data handler (do not wait or nest in conn.on('open'))
-            conn.on("data", (msg: any) => {
+            // Immediately attach chunk-safe data handler
+            const receiver = createChunkReceiver((msg) => {
               console.log("[P2P Host] Received data from peer:", conn.peer, msg?.event || msg?.type)
               handleHostIncomingMessage(conn, msg)
             })
+            conn.on("data", receiver)
 
             conn.on("open", () => {
               console.log("[P2P Host] DataChannel opened with peer:", conn.peer)
+              // Ensure registered in hostConnectionsRef once open
+              hostConnectionsRef.current.set(conn.peer, conn)
             })
 
             conn.on("error", (err: any) => {
@@ -497,7 +649,7 @@ export function useSocket() {
                   room.turnOrder = room.turnOrder.filter((p) => p.id !== conn.peer)
                 }
                 broadcastToRoom("player-left", {
-                  players: room.players,
+                  players: [...room.players],
                   leftPlayer: disconnected?.name || "Player",
                 })
               }
@@ -553,7 +705,7 @@ export function useSocket() {
                 reqCallbacksRef.current.set(reqId, callback)
               }
 
-              conn.send({
+              sendSafe(conn, {
                 type: "req",
                 reqId,
                 event: "join-room",
@@ -570,8 +722,8 @@ export function useSocket() {
               }, 10000)
             }
 
-            // Immediately attach data handler
-            conn.on("data", (msg: any) => {
+            // Immediately attach chunk-safe data handler
+            const clientReceiver = createChunkReceiver((msg: any) => {
               console.log("[P2P Client] Received data from host:", msg?.type, msg?.event)
               if (!msg || typeof msg !== "object") return
               if (msg.type === "res" && msg.reqId) {
@@ -584,6 +736,7 @@ export function useSocket() {
                 triggerLocal(msg.event, msg.payload)
               }
             })
+            conn.on("data", clientReceiver)
 
             if (conn.open) {
               sendJoinReq()
@@ -638,12 +791,21 @@ export function useSocket() {
 
           room.currentTurnPlayer = null
 
-          broadcastToRoom("game-started", {
+          const gamePayload = {
             speaker: { name: room.currentSpeaker.name, id: room.currentSpeaker.id },
             round: room.round,
             totalPlayers: room.players.length,
             totalImitators: room.turnOrder.length,
-          })
+          }
+
+          broadcastToRoom("game-started", gamePayload)
+
+          // Repeat once at 250ms to ensure 100% arrival guarantee on mobile browsers
+          setTimeout(() => {
+            if (hostRoomRef.current && hostRoomRef.current.gameState === "selecting-speaker") {
+              broadcastToRoom("game-started", gamePayload)
+            }
+          }, 250)
         } else if (event === "submit-original-audio") {
           room.originalAudio = data.audioData
           room.targetText = data.targetText || null
@@ -765,10 +927,10 @@ export function useSocket() {
       }
 
       // If we are a Contestant Peer connected to Host:
-      if (clientConnRef.current && clientConnRef.current.open) {
+      if (clientConnRef.current) {
         if (event === "leave-room") {
           try {
-            clientConnRef.current.send({
+            sendSafe(clientConnRef.current, {
               type: "req",
               reqId: Math.random().toString(36).substring(2, 9),
               event: "leave-room",
@@ -785,9 +947,19 @@ export function useSocket() {
           return
         }
 
-        clientConnRef.current.send({
+        const reqId = Math.random().toString(36).substring(2, 9)
+        if (callback) {
+          reqCallbacksRef.current.set(reqId, callback)
+          setTimeout(() => {
+            if (reqCallbacksRef.current.has(reqId)) {
+              reqCallbacksRef.current.delete(reqId)
+            }
+          }, 8000)
+        }
+
+        sendSafe(clientConnRef.current, {
           type: "req",
-          reqId: Math.random().toString(36).substring(2, 9),
+          reqId,
           event,
           data,
         })

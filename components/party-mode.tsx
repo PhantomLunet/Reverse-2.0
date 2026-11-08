@@ -38,6 +38,7 @@ import {
   Tv,
   ArrowUp,
   ArrowDown,
+  RefreshCw,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
@@ -388,15 +389,70 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
     [],
   )
 
+  const handleOriginalAudioArrival = useCallback(async (data: any) => {
+    const audioPayload = data?.originalAudio || data?.audioData
+    const sn = data?.speakerName || data?.speaker || "Speaker"
+    setSpeakerName(sn)
+    if (data?.targetText) setTargetText(data.targetText)
+    if (data?.totalImitators) setTotalReadyNeeded(data.totalImitators)
+    setReadyCount(0)
+    setAmIReady(false)
+    setAllReadyStarting(false)
+    if (audioPayload) setOriginalAudioBase64(audioPayload)
+
+    try {
+      if (audioPayload) {
+        const origBuf = await decodeBase64Audio(audioPayload)
+        setOriginalAudioBuffer(origBuf)
+
+        let revBuf: AudioBuffer | null = null
+        if (data?.reversedAudio) {
+          revBuf = await decodeBase64Audio(data.reversedAudio)
+          setReversedAudioBase64(data.reversedAudio)
+        } else {
+          revBuf = reverseAudioBuffer(origBuf)
+          try {
+            const chData = revBuf.getChannelData(0)
+            const wavBlob = encodeWAV(chData, revBuf.sampleRate)
+            const revB64 = await blobToBase64(wavBlob)
+            setReversedAudioBase64(revB64)
+          } catch (convErr) {
+            console.warn("Could not encode reversed wav base64:", convErr)
+          }
+        }
+        setReversedAudioBuffer(revBuf)
+      }
+    } catch (e) {
+      console.error("Failed to decode audio buffers:", e)
+    }
+
+    const isMeSpeaker = Boolean(
+      (data?.speakerId && socketId && data.speakerId === socketId) ||
+      (speaker?.id && socketId && speaker.id === socketId) ||
+      (sn && playerName && sn.trim().toLowerCase() === playerName.trim().toLowerCase())
+    )
+
+    if (!isMeSpeaker) {
+      setPhase("listening-reversed")
+      sfx.playRewind()
+    } else {
+      setPhase("waiting-turn")
+    }
+  }, [decodeBase64Audio, reverseAudioBuffer, socketId, speaker, playerName])
+
   // Socket Event Listeners
   useEffect(() => {
     const unsubJoined = on("player-joined", ({ players: ps }: any) => {
-      setPlayers(ps)
+      if (ps && Array.isArray(ps)) {
+        setPlayers([...ps])
+      }
       sfx.playClick()
     })
 
     const unsubLeft = on("player-left", ({ players: ps }: any) => {
-      setPlayers(ps)
+      if (ps && Array.isArray(ps)) {
+        setPlayers([...ps])
+      }
     })
 
     const unsubGameStarted = on(
@@ -420,63 +476,18 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
         setRankingSubmitted(false)
         setFinalScores(null)
 
-        if (sp.id === socketId) {
+        const isMeSpeaker = Boolean(
+          (sp?.id && socketId && sp.id === socketId) ||
+          (sp?.name && playerName && sp.name.trim().toLowerCase() === playerName.trim().toLowerCase())
+        )
+
+        if (isMeSpeaker) {
           setPhase("speaker-prompt")
         } else {
           setPhase("waiting-turn")
         }
       },
     )
-
-    const handleOriginalAudioArrival = async (data: any) => {
-      const audioPayload = data?.originalAudio || data?.audioData
-      const sn = data?.speakerName || data?.speaker || "Speaker"
-      setSpeakerName(sn)
-      if (data?.targetText) setTargetText(data.targetText)
-      if (data?.totalImitators) setTotalReadyNeeded(data.totalImitators)
-      setReadyCount(0)
-      setAmIReady(false)
-      setAllReadyStarting(false)
-      if (audioPayload) setOriginalAudioBase64(audioPayload)
-
-      try {
-        if (audioPayload) {
-          const origBuf = await decodeBase64Audio(audioPayload)
-          setOriginalAudioBuffer(origBuf)
-
-          let revBuf: AudioBuffer | null = null
-          if (data?.reversedAudio) {
-            revBuf = await decodeBase64Audio(data.reversedAudio)
-            setReversedAudioBase64(data.reversedAudio)
-          } else {
-            revBuf = reverseAudioBuffer(origBuf)
-            try {
-              const chData = revBuf.getChannelData(0)
-              const wavBlob = encodeWAV(chData, revBuf.sampleRate)
-              const revB64 = await blobToBase64(wavBlob)
-              setReversedAudioBase64(revB64)
-            } catch (convErr) {
-              console.warn("Could not encode reversed wav base64:", convErr)
-            }
-          }
-          setReversedAudioBuffer(revBuf)
-        }
-      } catch (e) {
-        console.error("Failed to decode audio buffers:", e)
-      }
-
-      const isMeSpeaker =
-        (data?.speakerId && data.speakerId === socketId) ||
-        (speaker && speaker.id === socketId) ||
-        sn === playerName
-
-      if (!isMeSpeaker) {
-        setPhase("listening-reversed")
-        sfx.playRewind()
-      } else {
-        setPhase("waiting-turn")
-      }
-    }
 
     const unsubOriginalSubmitted = on("original-audio-submitted", handleOriginalAudioArrival)
     const unsubOriginalSubmittedAlias = on("original-submitted", handleOriginalAudioArrival)
@@ -645,6 +656,52 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
     }
   }, [allAudios, rankings.length])
 
+  // Active Lobby State Sync Heartbeat: ensures host sees every contestant and players auto-advance when game starts
+  useEffect(() => {
+    if (phase !== "lobby" || !roomCode) return
+
+    const syncLobby = () => {
+      emit("sync-room-state", { roomCode, playerName }, (res: any) => {
+        if (res && res.success) {
+          if (res.players && Array.isArray(res.players)) {
+            setPlayers([...res.players])
+          }
+
+          // If host already started the round, advance contestants out of lobby immediately!
+          if (res.gameState && res.gameState !== "lobby") {
+            setRound(res.round || 1)
+            if (res.speaker) {
+              setSpeaker(res.speaker)
+              const isMe = Boolean(
+                (res.speaker.id && socketId && res.speaker.id === socketId) ||
+                (res.speaker.name && playerName && res.speaker.name.trim().toLowerCase() === playerName.trim().toLowerCase())
+              )
+              if (isMe) {
+                setPhase("speaker-prompt")
+              } else if (res.originalAudio) {
+                // Speaker already recorded, jump to listening
+                handleOriginalAudioArrival({
+                  originalAudio: res.originalAudio,
+                  speakerName: res.speaker.name,
+                  speakerId: res.speaker.id,
+                  targetText: res.targetText,
+                  totalImitators: res.totalNeeded,
+                })
+              } else {
+                setPhase("waiting-turn")
+              }
+            }
+          }
+        }
+      })
+    }
+
+    // Run sync immediately on lobby enter, then every 2.5 seconds
+    syncLobby()
+    const interval = setInterval(syncLobby, 2500)
+    return () => clearInterval(interval)
+  }, [phase, roomCode, playerName, emit, socketId, handleOriginalAudioArrival])
+
   const handleCreateRoom = useCallback(() => {
     if (!hostName.trim()) return
     setError(null)
@@ -671,15 +728,45 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
     emit("join-room", { roomCode: joinCode.trim(), playerName: playerName.trim() }, (response: any) => {
       if (response.success) {
         setRoomCode(joinCode.trim().toUpperCase())
-        setPlayers(response.players)
+        if (response.players && Array.isArray(response.players)) {
+          setPlayers([...response.players])
+        }
         setIsHost(false)
-        setPhase("lobby")
+
+        // If reconnecting to an active game in progress, enter game immediately
+        if (response.gameState && response.gameState !== "lobby") {
+          setRound(response.round || 1)
+          if (response.speaker) {
+            setSpeaker(response.speaker)
+            const isMe = Boolean(
+              (response.speaker.id && socketId && response.speaker.id === socketId) ||
+              (response.speaker.name && playerName && response.speaker.name.trim().toLowerCase() === playerName.trim().toLowerCase())
+            )
+            if (isMe) {
+              setPhase("speaker-prompt")
+            } else if (response.originalAudio) {
+              handleOriginalAudioArrival({
+                originalAudio: response.originalAudio,
+                speakerName: response.speaker.name,
+                speakerId: response.speaker.id,
+                targetText: response.targetText,
+                totalImitators: response.totalNeeded,
+              })
+            } else {
+              setPhase("waiting-turn")
+            }
+          } else {
+            setPhase("waiting-turn")
+          }
+        } else {
+          setPhase("lobby")
+        }
         sfx.playClick()
       } else {
         setError(response.error || "Could not join room. Check the 6-character code.")
       }
     })
-  }, [joinCode, playerName, emit])
+  }, [joinCode, playerName, emit, socketId, handleOriginalAudioArrival])
 
   const handleLeaveRoom = useCallback(() => {
     sfx.playClick()
@@ -1147,20 +1234,38 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
                   <Users className="h-4 w-4 text-[#d3ff62]" />
                   Contestants ({players.length} In Room)
                 </span>
-                <span className="text-[#71717d]">Need 2+ to start</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sfx.playClick()
+                      emit("sync-room-state", { roomCode, playerName }, (res: any) => {
+                        if (res?.success && res.players && Array.isArray(res.players)) {
+                          setPlayers([...res.players])
+                        }
+                      })
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#d3ff62] hover:text-[#c2f247] hover:underline cursor-pointer transition-colors"
+                    title="Refresh roster"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Sync
+                  </button>
+                  <span className="text-[#71717d]">Need 2+ to start</span>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {players.map((p) => (
+                {players.map((p, idx) => (
                   <div
-                    key={p.id || p.name}
+                    key={`${p.id || 'p'}-${p.name}-${idx}`}
                     className="flex items-center justify-between p-3 rounded-2xl border border-[#35353d] bg-[#232329] text-xs font-bold"
                   >
-                    <span className="text-[#f5f4ed] truncate max-w-[100px]">
+                    <span className="text-[#f5f4ed] truncate max-w-[120px] sm:max-w-[160px]" title={p.name}>
                       {p.name}
                     </span>
                     {p.isHost && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#111113] bg-[#d3ff62] px-1.5 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#111113] bg-[#d3ff62] px-1.5 py-0.5 rounded-full shrink-0 ml-1">
                         <Crown className="h-3 w-3" />
                         HOST
                       </span>
