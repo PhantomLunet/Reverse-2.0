@@ -289,7 +289,9 @@ app.prepare().then(() => {
       room.originalAudio = audioData;
       room.targetText = targetText || null;
       room.gameState = "playing-reversed";
+      room.readyImitators = new Set();
 
+      const totalNeeded = room.turnOrder ? room.turnOrder.length : 0;
       const payload = {
         originalAudio: audioData,
         audioData: audioData,
@@ -297,24 +299,68 @@ app.prepare().then(() => {
         speaker: room.currentSpeaker.name,
         speakerId: room.currentSpeaker.id,
         targetText: room.targetText,
+        totalImitators: totalNeeded,
       };
 
       // Notify all players (support both event names)
       io.to(roomCode).emit("original-audio-submitted", payload);
       io.to(roomCode).emit("original-submitted", payload);
 
-      console.log(`[Game] Room ${roomCode}: original audio submitted by ${room.currentSpeaker.name} (phrase: "${room.targetText || 'n/a'}")`);
+      console.log(`[Game] Room ${roomCode}: original audio submitted by ${room.currentSpeaker.name} (phrase: "${room.targetText || 'n/a'}", waiting for ${totalNeeded} imitators)`);
     };
     socket.on("submit-original-audio", handleOriginalAudio);
 
-    // Start turns after listening (support both events)
-    const handleNextTurn = ({ roomCode }) => {
+    // Handle player confirming they are ready to imitate
+    const handleReadyToImitate = ({ roomCode, playerName }) => {
       const room = rooms.get(roomCode);
-      if (!room) return;
-      advanceToNextTurn(room, roomCode);
+      if (!room || !room.turnOrder || room.gameState !== "playing-reversed") return;
+
+      if (!room.readyImitators) room.readyImitators = new Set();
+      room.readyImitators.add(socket.id);
+
+      const totalNeeded = room.turnOrder.length;
+      const readyCount = room.readyImitators.size;
+      const pName = playerName || (room.players.find((p) => p.id === socket.id)?.name) || "Player";
+
+      // Broadcast ready count update to all players
+      io.to(roomCode).emit("imitator-ready-update", {
+        readyCount,
+        totalNeeded,
+        readyPlayerId: socket.id,
+        readyPlayerName: pName,
+      });
+
+      console.log(`[Game] Room ${roomCode}: Imitator ready ${readyCount}/${totalNeeded} (${pName})`);
+
+      // Once all contestants in turnOrder have confirmed ready, start the round!
+      if (readyCount >= totalNeeded) {
+        console.log(`[Game] Room ${roomCode}: All ${totalNeeded} imitators ready! Starting turns.`);
+        io.to(roomCode).emit("all-imitators-ready", {
+          totalImitators: totalNeeded,
+        });
+
+        setTimeout(() => {
+          advanceToNextTurn(room, roomCode);
+        }, 500);
+      }
     };
-    socket.on("request-next-turn", handleNextTurn);
-    socket.on("ready-to-imitate", handleNextTurn);
+    socket.on("ready-to-imitate", handleReadyToImitate);
+
+    // Host can force start turns if someone is inactive or taking too long
+    const handleForceStartTurns = ({ roomCode }) => {
+      const room = rooms.get(roomCode);
+      if (!room || room.host.id !== socket.id || room.gameState !== "playing-reversed") return;
+      console.log(`[Game] Room ${roomCode}: Host force-started turns.`);
+      io.to(roomCode).emit("all-imitators-ready", {
+        totalImitators: room.turnOrder ? room.turnOrder.length : 1,
+        forced: true,
+      });
+      setTimeout(() => {
+        advanceToNextTurn(room, roomCode);
+      }, 300);
+    };
+    socket.on("force-start-turns", handleForceStartTurns);
+    socket.on("request-next-turn", handleForceStartTurns);
 
     // Host can skip an inactive player's turn
     const handleSkip = ({ roomCode }) => {
@@ -434,6 +480,9 @@ app.prepare().then(() => {
       if (room.turnOrder) {
         room.turnOrder = room.turnOrder.filter((p) => p.id !== socket.id);
       }
+      if (room.readyImitators) {
+        room.readyImitators.delete(socket.id);
+      }
       if (room.rankings && room.rankings[socket.id]) {
         delete room.rankings[socket.id];
       }
@@ -474,8 +523,14 @@ app.prepare().then(() => {
         // If the current turn player disconnected, advance
         if (room.currentTurnPlayer && room.currentTurnPlayer.id === socket.id) {
           advanceToNextTurn(room, roomCode);
-        } else if (room.gameState === "playing-reversed" || room.gameState === "selecting-speaker") {
-          // Check if all remaining imitators have submitted
+        } else if (room.gameState === "playing-reversed") {
+          // If we were waiting for imitators to be ready, check if all remaining are ready
+          if (room.turnOrder && room.readyImitators && room.turnOrder.length > 0 && room.readyImitators.size >= room.turnOrder.length) {
+            advanceToNextTurn(room, roomCode);
+          } else if (room.turnOrder && Object.keys(room.audios).length >= room.turnOrder.length) {
+            finishImitations(room, roomCode);
+          }
+        } else if (room.gameState === "selecting-speaker") {
           if (room.turnOrder && Object.keys(room.audios).length >= room.turnOrder.length) {
             finishImitations(room, roomCode);
           }

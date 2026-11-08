@@ -140,6 +140,12 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   const [totalImitators, setTotalImitators] = useState(0)
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
+  // Synchronized Ready State (waiting for all imitators to finish listening)
+  const [readyCount, setReadyCount] = useState(0)
+  const [totalReadyNeeded, setTotalReadyNeeded] = useState(0)
+  const [amIReady, setAmIReady] = useState(false)
+  const [allReadyStarting, setAllReadyStarting] = useState(false)
+
   // Results & Ranking state
   const [allAudios, setAllAudios] = useState<AudioEntry[]>([])
   const [speakerName, setSpeakerName] = useState("")
@@ -377,7 +383,7 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
           sfx.playCountdown(true)
           onGo()
         }
-      }, 700)
+      }, 900)
     },
     [],
   )
@@ -400,6 +406,10 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
         setRound(r)
         setTargetText(tt || null)
         setTotalImitators(ti)
+        setTotalReadyNeeded(ti || 0)
+        setReadyCount(0)
+        setAmIReady(false)
+        setAllReadyStarting(false)
         setReversedAudioBuffer(null)
         setOriginalAudioBuffer(null)
         setHasSubmitted(false)
@@ -423,6 +433,10 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       const sn = data?.speakerName || data?.speaker || "Speaker"
       setSpeakerName(sn)
       if (data?.targetText) setTargetText(data.targetText)
+      if (data?.totalImitators) setTotalReadyNeeded(data.totalImitators)
+      setReadyCount(0)
+      setAmIReady(false)
+      setAllReadyStarting(false)
       if (audioPayload) setOriginalAudioBase64(audioPayload)
 
       try {
@@ -467,13 +481,33 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
     const unsubOriginalSubmitted = on("original-audio-submitted", handleOriginalAudioArrival)
     const unsubOriginalSubmittedAlias = on("original-submitted", handleOriginalAudioArrival)
 
+    const unsubReadyUpdate = on(
+      "imitator-ready-update",
+      ({ readyCount: rc, totalNeeded: tn }: any) => {
+        setReadyCount(rc)
+        if (tn !== undefined) setTotalReadyNeeded(tn)
+        sfx.playClick()
+      },
+    )
+
+    const unsubAllReady = on("all-imitators-ready", () => {
+      setAllReadyStarting(true)
+      sfx.playSuccess()
+    })
+
     const unsubYourTurn = on(
       "your-turn",
       ({ turnNumber: tn, totalTurns: tt, player }: any) => {
         setTurnNumber(tn)
         setTotalTurns(tt)
+        setAllReadyStarting(false)
 
-        const isMe = !player || player.id === socketId || player.name === playerName
+        const isMe = Boolean(
+          player && (
+            (socketId && player.id === socketId) ||
+            (player.name && playerName && player.name.toLowerCase().trim() === playerName.toLowerCase().trim())
+          )
+        )
 
         if (isMe) {
           setCurrentTurnPlayer({ name: playerName, id: socketId || "" })
@@ -555,6 +589,10 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       setPhase("lobby")
       setHasSubmitted(false)
       setSubmittedCount(0)
+      setReadyCount(0)
+      setTotalReadyNeeded(0)
+      setAmIReady(false)
+      setAllReadyStarting(false)
       setAllAudios([])
       setRankings([])
       setRankingSubmitted(false)
@@ -579,6 +617,8 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       unsubGameStarted()
       unsubOriginalSubmitted()
       unsubOriginalSubmittedAlias()
+      unsubReadyUpdate()
+      unsubAllReady()
       unsubYourTurn()
       unsubImitationSubmitted()
       unsubAllDone()
@@ -701,8 +741,13 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   }, [reversedAudioBuffer, reversedAudioBase64, reversedPlayCount, playAudio])
 
   const handleReadyToImitate = useCallback(() => {
-    setPhase("waiting-turn")
-    emit("ready-to-imitate", { roomCode })
+    setAmIReady(true)
+    emit("ready-to-imitate", { roomCode, playerName })
+    sfx.playClick()
+  }, [emit, roomCode, playerName])
+
+  const handleForceStartTurns = useCallback(() => {
+    emit("force-start-turns", { roomCode })
     sfx.playClick()
   }, [emit, roomCode])
 
@@ -1302,17 +1347,68 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
                 {reversedPlayCount === 0 ? "Play Inverted Voice 🔄" : `Listen Again (${MAX_REVERSE_PLAYS - reversedPlayCount} left)`}
               </Button>
 
-              {reversedPlayCount > 0 && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleReadyToImitate}
-                  className="py-6 text-sm font-bold rounded-2xl border border-[#35353d] bg-[#232329] text-[#d3ff62] hover:bg-[#2c2c35] cursor-pointer"
-                >
-                  <Check className="mr-2 h-4 w-4 text-[#d3ff62]" strokeWidth={2.5} />
-                  I&apos;m Ready to Record My Turn!
-                </Button>
+              {allReadyStarting && (
+                <div className="p-4 rounded-2xl border border-[#d3ff62] bg-[#d3ff62] text-[#111113] font-black text-sm animate-pulse shadow-xl">
+                  🎉 All contestants confirmed ready! Starting turns...
+                </div>
               )}
+
+              {amIReady ? (
+                <div className="p-5 rounded-2xl border border-[#d3ff62]/40 bg-[#d3ff62]/10 space-y-3">
+                  <div className="flex items-center justify-center gap-2 text-sm font-black text-[#d3ff62]">
+                    <Check className="h-5 w-5" strokeWidth={3} />
+                    <span>You Confirmed Ready!</span>
+                  </div>
+                  <p className="text-xs text-[#aaa9b4] font-medium">
+                    Waiting for fellow contestants to finish listening before turns begin...
+                  </p>
+
+                  <div className="space-y-1.5 max-w-xs mx-auto">
+                    <div className="flex justify-between text-xs font-bold text-[#f5f4ed]">
+                      <span>Ready to Imitate</span>
+                      <span className="text-[#d3ff62]">{readyCount} of {totalReadyNeeded || "all"}</span>
+                    </div>
+                    <div className="h-2 w-full bg-[#1b1b20] rounded-full overflow-hidden border border-[#35353d]">
+                      <div
+                        className="h-full bg-[#d3ff62] transition-all duration-300"
+                        style={{
+                          width: `${totalReadyNeeded > 0 ? Math.min(100, (readyCount / totalReadyNeeded) * 100) : 50}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {isHost && readyCount > 0 && (
+                    <div className="pt-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleForceStartTurns}
+                        className="text-xs font-bold text-[#d3ff62] hover:bg-[#d3ff62]/20"
+                      >
+                        ⚡ Host: Start Round Now ({readyCount}/{totalReadyNeeded})
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : reversedPlayCount > 0 ? (
+                <div className="space-y-2">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={handleReadyToImitate}
+                    className="w-full py-6 text-sm font-black rounded-2xl border-2 border-[#d3ff62] bg-[#d3ff62]/10 text-[#d3ff62] hover:bg-[#d3ff62] hover:text-[#111113] transition-all shadow-[0_0_20px_rgba(211,255,98,0.2)] cursor-pointer"
+                  >
+                    <Check className="mr-2 h-5 w-5" strokeWidth={3} />
+                    I&apos;m Ready to Record My Turn!
+                  </Button>
+                  {totalReadyNeeded > 0 && (
+                    <p className="text-xs font-bold text-[#aaa9b4]">
+                      {readyCount} of {totalReadyNeeded} contestants confirmed ready
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -1375,13 +1471,43 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
               </div>
             )}
 
+            {originalAudioBuffer && !currentTurnPlayer && (
+              <div className="space-y-3">
+                <h3 className="text-xl font-black text-[#f5f4ed]">
+                  Contestants Are Listening...
+                </h3>
+                <p className="text-xs text-[#aaa9b4] font-medium max-w-sm mx-auto">
+                  Players are studying the reversed audio clip before recording turns!
+                </p>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[#1b1b20] border border-[#35353d] text-xs font-bold text-[#d3ff62]">
+                  <Check className="h-4 w-4" />
+                  <span>{readyCount} of {totalReadyNeeded || totalImitators || "all"} contestants ready</span>
+                </div>
+                {isHost && readyCount > 0 && (
+                  <div className="pt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleForceStartTurns}
+                      className="text-xs font-bold border-[#d3ff62]/40 text-[#d3ff62] hover:bg-[#d3ff62]/10 rounded-xl"
+                    >
+                      ⚡ Force Start Round Now ({readyCount}/{totalReadyNeeded || totalImitators})
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {originalAudioBuffer && !hasSubmitted && currentTurnPlayer && currentTurnPlayer.id !== socketId && (
-              <div className="space-y-1">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#d3ff62]/10 border border-[#d3ff62]/30 text-xs font-bold text-[#d3ff62]">
+                  <span>Turn {turnNumber} of {totalTurns}</span>
+                </div>
                 <h3 className="text-xl font-black text-[#f5f4ed]">
                   {currentTurnPlayer.name} is imitating right now...
                 </h3>
-                <p className="text-xs font-bold text-[#d3ff62] mt-1">
-                  Turn {turnNumber} of {totalTurns} • {submittedCount} submitted
+                <p className="text-xs text-[#aaa9b4] font-medium">
+                  {submittedCount} of {totalImitators} imitations submitted
                 </p>
               </div>
             )}

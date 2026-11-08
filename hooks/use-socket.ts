@@ -43,6 +43,7 @@ export function useSocket() {
     currentSpeaker: { id: string; name: string } | null
     currentTurnPlayer: { id: string; name: string } | null
     turnOrder: Array<{ id: string; name: string; isHost: boolean }>
+    readyImitators: string[]
     audios: Record<string, { playerName: string; audioData: string; playerId: string; skipped?: boolean }>
     rankings: Record<string, any>
     round: number
@@ -299,7 +300,9 @@ export function useSocket() {
           room.originalAudio = data.audioData
           room.targetText = data.targetText || null
           room.gameState = "playing-reversed"
+          room.readyImitators = []
 
+          const totalNeeded = room.turnOrder ? room.turnOrder.length : 0
           broadcastToRoom("original-audio-submitted", {
             originalAudio: data.audioData,
             audioData: data.audioData,
@@ -307,6 +310,7 @@ export function useSocket() {
             speaker: room.currentSpeaker?.name || "Speaker",
             speakerId: room.currentSpeaker?.id,
             targetText: room.targetText,
+            totalImitators: totalNeeded,
           })
         } else if (event === "leave-room") {
           hostConnectionsRef.current.delete(conn.peer)
@@ -315,6 +319,9 @@ export function useSocket() {
           if (room.turnOrder) {
             room.turnOrder = room.turnOrder.filter((p) => p.id !== conn.peer)
           }
+          if (room.readyImitators) {
+            room.readyImitators = room.readyImitators.filter((id) => id !== conn.peer)
+          }
           broadcastToRoom("player-left", {
             players: room.players,
             leftPlayer: disconnected?.name || "Player",
@@ -322,8 +329,40 @@ export function useSocket() {
           if (room.currentTurnPlayer && room.currentTurnPlayer.id === conn.peer) {
             advanceToNextTurn(room)
           }
-        } else if (event === "ready-to-imitate" || event === "request-next-turn") {
-          advanceToNextTurn(room)
+        } else if (event === "ready-to-imitate") {
+          if (!room.readyImitators) room.readyImitators = []
+          if (!room.readyImitators.includes(conn.peer)) {
+            room.readyImitators.push(conn.peer)
+          }
+
+          const totalNeeded = room.turnOrder ? room.turnOrder.length : 0
+          const readyCount = room.readyImitators.length
+          const senderPlayer = room.players.find((p) => p.id === conn.peer)
+          const pName = data?.playerName || senderPlayer?.name || "Player"
+
+          broadcastToRoom("imitator-ready-update", {
+            readyCount,
+            totalNeeded,
+            readyPlayerId: conn.peer,
+            readyPlayerName: pName,
+          })
+
+          if (readyCount >= totalNeeded) {
+            broadcastToRoom("all-imitators-ready", {
+              totalImitators: totalNeeded,
+            })
+            setTimeout(() => {
+              advanceToNextTurn(room)
+            }, 500)
+          }
+        } else if (event === "force-start-turns" || event === "request-next-turn") {
+          broadcastToRoom("all-imitators-ready", {
+            totalImitators: room.turnOrder ? room.turnOrder.length : 1,
+            forced: true,
+          })
+          setTimeout(() => {
+            advanceToNextTurn(room)
+          }, 300)
         } else if (event === "submit-imitation-audio" || event === "submit-imitation") {
           const senderPlayer = room.players.find((p) => p.id === conn.peer)
           const pName = senderPlayer ? senderPlayer.name : "Player"
@@ -412,6 +451,7 @@ export function useSocket() {
               currentSpeaker: null,
               currentTurnPlayer: null,
               turnOrder: [],
+              readyImitators: [],
               audios: {},
               rankings: {},
               round: 0,
@@ -608,7 +648,9 @@ export function useSocket() {
           room.originalAudio = data.audioData
           room.targetText = data.targetText || null
           room.gameState = "playing-reversed"
+          room.readyImitators = []
 
+          const totalNeeded = room.turnOrder ? room.turnOrder.length : 0
           broadcastToRoom("original-audio-submitted", {
             originalAudio: data.audioData,
             audioData: data.audioData,
@@ -616,6 +658,7 @@ export function useSocket() {
             speaker: room.currentSpeaker?.name || "Speaker",
             speakerId: room.currentSpeaker?.id,
             targetText: room.targetText,
+            totalImitators: totalNeeded,
           })
         } else if (event === "leave-room") {
           broadcastToRoom("player-left", {
@@ -632,8 +675,41 @@ export function useSocket() {
           hostRoomRef.current = null
           setMyId(null)
           return
-        } else if (event === "ready-to-imitate" || event === "request-next-turn") {
-          advanceToNextTurn(room)
+        } else if (event === "ready-to-imitate") {
+          const myIdVal = myId || "host"
+          if (!room.readyImitators) room.readyImitators = []
+          if (!room.readyImitators.includes(myIdVal)) {
+            room.readyImitators.push(myIdVal)
+          }
+
+          const totalNeeded = room.turnOrder ? room.turnOrder.length : 0
+          const readyCount = room.readyImitators.length
+          const hostPlayer = room.players.find((p) => p.isHost)
+          const pName = data?.playerName || hostPlayer?.name || "Host"
+
+          broadcastToRoom("imitator-ready-update", {
+            readyCount,
+            totalNeeded,
+            readyPlayerId: myIdVal,
+            readyPlayerName: pName,
+          })
+
+          if (readyCount >= totalNeeded) {
+            broadcastToRoom("all-imitators-ready", {
+              totalImitators: totalNeeded,
+            })
+            setTimeout(() => {
+              advanceToNextTurn(room)
+            }, 500)
+          }
+        } else if (event === "force-start-turns" || event === "request-next-turn") {
+          broadcastToRoom("all-imitators-ready", {
+            totalImitators: room.turnOrder ? room.turnOrder.length : 1,
+            forced: true,
+          })
+          setTimeout(() => {
+            advanceToNextTurn(room)
+          }, 300)
         } else if (event === "submit-imitation-audio" || event === "submit-imitation") {
           const myIdVal = myId || "host"
           const hostPlayer = room.players.find((p) => p.isHost)
