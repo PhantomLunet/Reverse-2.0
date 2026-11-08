@@ -418,18 +418,66 @@ export function ReverseAudioGame({ onBack }: ReverseAudioGameProps) {
     <div className="min-h-[100dvh] bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-6 md:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 font-sans transition-colors duration-300 w-full overflow-x-hidden">
       {/* Top Header */}
       <header className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#e2e2e8] dark:border-[#35353d]">
-        {onBack && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            disabled={isRecording}
-            className="font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
-            Hub
-          </Button>
-        )}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {phase === "setup" ? (
+            onBack && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+                disabled={isRecording}
+                className="font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl cursor-pointer"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
+                Hub
+              </Button>
+            )
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  stopPlayback()
+                  sfx.playClick()
+                  if (phase === "start") {
+                    setPhase("setup")
+                  } else if (phase === "original-recorded") {
+                    setPhase("start")
+                  } else if (phase === "playing-reversed") {
+                    setPhase("start")
+                  } else if (phase === "imitation-recorded") {
+                    setPhase("playing-reversed")
+                  } else if (phase === "voting" || phase === "reveal") {
+                    setPhase("setup")
+                  } else {
+                    setPhase("setup")
+                  }
+                }}
+                disabled={isRecording}
+                className="font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl cursor-pointer"
+                title="Go back one step"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
+                Back
+              </Button>
+              {onBack && (
+                <>
+                  <span className="text-[#8e8d99] dark:text-[#71717d]">•</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onBack}
+                    disabled={isRecording}
+                    className="font-bold text-xs uppercase tracking-wider text-[#8e8d99] dark:text-[#71717d] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl cursor-pointer px-2"
+                  >
+                    Hub
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-3 py-1.5 rounded-full bg-[#f4f4f7] dark:bg-[#1b1b20] text-[#7a58e6] dark:text-[#ae98f5] border border-[#e2e2e8] dark:border-[#35353d]">

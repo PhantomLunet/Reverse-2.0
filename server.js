@@ -21,16 +21,51 @@ function generateRoomCode() {
   return code;
 }
 
-// Get local IP for LAN access
+// Get local IP for LAN access, filtering out virtual switches/adapters
 function getLocalIP() {
+  if (process.env.HOST_IP) return process.env.HOST_IP;
+  if (process.env.PUBLIC_URL) {
+    try {
+      const u = new URL(process.env.PUBLIC_URL);
+      return u.hostname;
+    } catch {}
+  }
+
   const interfaces = os.networkInterfaces();
+  const virtualRegex = /(vethernet|virtual|vbox|vmware|wsl|docker|loopback|pseudo|tailscale|hamachi)/i;
+  const preferredRegex = /(wi-?fi|wireless|wlan|eth|ethernet|en\d+)/i;
+
+  const candidates = [];
+
   for (const name of Object.keys(interfaces)) {
+    const isVirtual = virtualRegex.test(name);
+    const isPreferred = preferredRegex.test(name);
+
     for (const iface of interfaces[name]) {
       if (iface.family === "IPv4" && !iface.internal) {
-        return iface.address;
+        if (iface.address.startsWith("127.") || iface.address.startsWith("169.254.")) {
+          continue;
+        }
+
+        let score = 0;
+        if (!isVirtual) score += 50;
+        if (isPreferred) score += 40;
+        if (iface.address.startsWith("192.168.")) score += 30;
+        else if (iface.address.startsWith("10.")) score += 20;
+        else if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(iface.address) && isVirtual) {
+          score -= 30;
+        }
+
+        candidates.push({ address: iface.address, name, score });
       }
     }
   }
+
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0].address;
+  }
+
   return "localhost";
 }
 
@@ -44,7 +79,11 @@ app.prepare().then(() => {
   });
 
   const io = new Server(httpServer, {
-    cors: { origin: "*" },
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST", "OPTIONS"],
+      credentials: false,
+    },
     maxHttpBufferSize: 15 * 1024 * 1024, // 15MB for audio payloads
   });
 
@@ -256,6 +295,7 @@ app.prepare().then(() => {
         audioData: audioData,
         speakerName: room.currentSpeaker.name,
         speaker: room.currentSpeaker.name,
+        speakerId: room.currentSpeaker.id,
         targetText: room.targetText,
       };
 
@@ -363,8 +403,8 @@ app.prepare().then(() => {
     socket.on("new-round", handleNewRound);
     socket.on("next-round", handleNewRound);
 
-    // Handle disconnect
-    socket.on("disconnect", () => {
+    // Handle clean room departure (Back button or disconnect)
+    const handlePlayerExit = (reason = "left") => {
       const roomCode = socket.roomCode;
       if (!roomCode) return;
 
@@ -373,6 +413,9 @@ app.prepare().then(() => {
 
       const disconnectedPlayer = room.players.find((p) => p.id === socket.id);
       room.players = room.players.filter((p) => p.id !== socket.id);
+
+      socket.leave(roomCode);
+      delete socket.roomCode;
 
       // Clean up empty room
       if (room.players.length === 0) {
@@ -397,10 +440,10 @@ app.prepare().then(() => {
 
       io.to(roomCode).emit("player-left", {
         players: room.players.map((p) => ({ name: p.name, isHost: p.isHost, id: p.id })),
-        leftPlayer: disconnectedPlayer?.name || "Unknown",
+        leftPlayer: disconnectedPlayer?.name || "Player",
       });
 
-      console.log(`[Room] ${disconnectedPlayer?.name || socket.id} left room ${roomCode}`);
+      console.log(`[Room] ${disconnectedPlayer?.name || socket.id} ${reason} room ${roomCode}`);
 
       // Handle in-game state resilience
       if (room.gameState !== "lobby") {
@@ -440,7 +483,10 @@ app.prepare().then(() => {
           checkAndComputeRankings(room, roomCode);
         }
       }
-    });
+    };
+
+    socket.on("leave-room", () => handlePlayerExit("left"));
+    socket.on("disconnect", () => handlePlayerExit("disconnected"));
   });
 
   httpServer.listen(port, hostname, () => {

@@ -305,8 +305,23 @@ export function useSocket() {
             audioData: data.audioData,
             speakerName: room.currentSpeaker?.name || "Speaker",
             speaker: room.currentSpeaker?.name || "Speaker",
+            speakerId: room.currentSpeaker?.id,
             targetText: room.targetText,
           })
+        } else if (event === "leave-room") {
+          hostConnectionsRef.current.delete(conn.peer)
+          const disconnected = room.players.find((p) => p.id === conn.peer)
+          room.players = room.players.filter((p) => p.id !== conn.peer)
+          if (room.turnOrder) {
+            room.turnOrder = room.turnOrder.filter((p) => p.id !== conn.peer)
+          }
+          broadcastToRoom("player-left", {
+            players: room.players,
+            leftPlayer: disconnected?.name || "Player",
+          })
+          if (room.currentTurnPlayer && room.currentTurnPlayer.id === conn.peer) {
+            advanceToNextTurn(room)
+          }
         } else if (event === "ready-to-imitate" || event === "request-next-turn") {
           advanceToNextTurn(room)
         } else if (event === "submit-imitation-audio" || event === "submit-imitation") {
@@ -599,8 +614,24 @@ export function useSocket() {
             audioData: data.audioData,
             speakerName: room.currentSpeaker?.name || "Speaker",
             speaker: room.currentSpeaker?.name || "Speaker",
+            speakerId: room.currentSpeaker?.id,
             targetText: room.targetText,
           })
+        } else if (event === "leave-room") {
+          broadcastToRoom("player-left", {
+            players: [],
+            leftPlayer: room.host.name || "Host",
+          })
+          hostConnectionsRef.current.forEach((c) => {
+            try { c.close() } catch {}
+          })
+          hostConnectionsRef.current.clear()
+          if (peerInstanceRef.current) {
+            try { peerInstanceRef.current.destroy() } catch {}
+          }
+          hostRoomRef.current = null
+          setMyId(null)
+          return
         } else if (event === "ready-to-imitate" || event === "request-next-turn") {
           advanceToNextTurn(room)
         } else if (event === "submit-imitation-audio" || event === "submit-imitation") {
@@ -659,6 +690,25 @@ export function useSocket() {
 
       // If we are a Contestant Peer connected to Host:
       if (clientConnRef.current && clientConnRef.current.open) {
+        if (event === "leave-room") {
+          try {
+            clientConnRef.current.send({
+              type: "req",
+              reqId: Math.random().toString(36).substring(2, 9),
+              event: "leave-room",
+              data,
+            })
+            clientConnRef.current.close()
+          } catch {}
+          if (peerInstanceRef.current) {
+            try { peerInstanceRef.current.destroy() } catch {}
+          }
+          clientConnRef.current = null
+          peerInstanceRef.current = null
+          setMyId(null)
+          return
+        }
+
         clientConnRef.current.send({
           type: "req",
           reqId: Math.random().toString(36).substring(2, 9),

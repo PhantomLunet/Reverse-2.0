@@ -66,10 +66,21 @@ export async function decodeAudioSafely(
   audioContext: AudioContext,
   base64Data: string,
 ): Promise<AudioBuffer> {
-  const binaryString = atob(base64Data)
+  if (!base64Data || typeof base64Data !== "string") {
+    throw new Error("Invalid audio payload")
+  }
+
+  const cleanBase64 = base64Data.replace(/^data:audio\/[^;]+;base64,/, "").trim()
+  const binaryString = atob(cleanBase64)
   const bytes = new Uint8Array(binaryString.length)
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i)
+  }
+
+  if (audioContext.state === "suspended") {
+    try {
+      await audioContext.resume()
+    } catch {}
   }
 
   try {

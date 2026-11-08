@@ -545,27 +545,42 @@ export function ModeSelector({
         <div className="flex-1 flex flex-col w-full animate-fade-in overflow-x-hidden">
           {/* Navigation Bar (Exact Figma Frame 5:9473 & 5:9960) */}
           <nav className="border-b border-[#e2e2e8] dark:border-[#35353d] px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 h-16 sm:h-20 lg:h-24 flex items-center justify-between sticky top-0 bg-[#ffffff]/90 dark:bg-[#111113]/90 backdrop-blur-md z-30 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                sfx.playClick()
-                setView("intro")
-              }}
-              className="flex items-center gap-2.5 sm:gap-3 group cursor-pointer"
-            >
-              <div className="relative w-7 h-7 sm:w-8 sm:h-8 lg:w-9 lg:h-9 shrink-0">
-                <Image
-                  src="/figma/reverse-audio-symbol.svg"
-                  alt="Rev3rse logo"
-                  width={36}
-                  height={36}
-                  className="w-full h-full"
-                />
-              </div>
-              <span className="font-extrabold text-xl sm:text-2xl text-[#111113] dark:text-[#f5f4ed]">
-                Rev3rse
-              </span>
-            </button>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.playClick()
+                  setView("intro")
+                }}
+                className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] py-2 px-2.5 rounded-xl transition-colors cursor-pointer mr-0.5 sm:mr-1"
+                title="Back to Intro"
+              >
+                <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+                <span className="hidden xs:inline">Intro</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.playClick()
+                  setView("intro")
+                }}
+                className="flex items-center gap-2.5 sm:gap-3 group cursor-pointer"
+              >
+                <div className="relative w-7 h-7 sm:w-8 sm:h-8 lg:w-9 lg:h-9 shrink-0">
+                  <Image
+                    src="/figma/reverse-audio-symbol.svg"
+                    alt="Rev3rse logo"
+                    width={36}
+                    height={36}
+                    className="w-full h-full"
+                  />
+                </div>
+                <span className="font-extrabold text-xl sm:text-2xl text-[#111113] dark:text-[#f5f4ed]">
+                  Rev3rse
+                </span>
+              </button>
+            </div>
 
             <div className="flex items-center gap-2.5 sm:gap-5">
               <PwaInstallPrompt />
@@ -1064,29 +1079,44 @@ export function ModeSelector({
         <div className="flex-1 flex flex-col justify-between w-full animate-fade-in overflow-x-hidden min-h-[100dvh]">
           {/* Header */}
           <header className="border-b border-[#e2e2e8] dark:border-[#35353d] px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 h-16 sm:h-20 lg:h-24 flex items-center justify-between sticky top-0 bg-[#ffffff]/90 dark:bg-[#111113]/90 backdrop-blur-md z-30 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                sfx.playClick()
-                setView("how-to-play")
-              }}
-              className="flex items-center gap-2.5 sm:gap-3 group cursor-pointer"
-            >
-              <div className="relative w-7 h-7 sm:w-8 sm:h-8 lg:w-9 lg:h-9 shrink-0">
-                <Image
-                  src="/figma/reverse-audio-symbol.svg"
-                  alt="Rev3rse logo"
-                  width={36}
-                  height={36}
-                  className="w-full h-full"
-                />
-              </div>
-              <span className="font-extrabold text-xl sm:text-2xl text-[#111113] dark:text-[#f5f4ed]">
-                Rev3rse
-              </span>
-            </button>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.playClick()
+                  setView("how-to-play")
+                }}
+                className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] py-2 px-2.5 rounded-xl transition-colors cursor-pointer mr-0.5 sm:mr-1"
+                title="Back to How to Play"
+              >
+                <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+                <span className="hidden xs:inline">Back</span>
+              </button>
 
-            <div className="flex items-center gap-2.5 sm:gap-5">
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.playClick()
+                  setView("how-to-play")
+                }}
+                className="flex items-center gap-2.5 sm:gap-3 group cursor-pointer"
+              >
+                <div className="relative w-7 h-7 sm:w-8 sm:h-8 lg:w-9 lg:h-9 shrink-0">
+                  <Image
+                    src="/figma/reverse-audio-symbol.svg"
+                    alt="Rev3rse logo"
+                    width={36}
+                    height={36}
+                    className="w-full h-full"
+                  />
+                </div>
+                <span className="font-extrabold text-xl sm:text-2xl text-[#111113] dark:text-[#f5f4ed]">
+                  Rev3rse
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-4">
               <PwaInstallPrompt />
               <button
                 type="button"
@@ -1094,9 +1124,9 @@ export function ModeSelector({
                   sfx.playClick()
                   setView("how-to-play")
                 }}
-                className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] transition-colors cursor-pointer"
+                className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] transition-colors cursor-pointer py-1.5 px-2 rounded-lg hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20]"
               >
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft className="h-3.5 w-3.5" />
                 <span>How to play</span>
               </button>
 

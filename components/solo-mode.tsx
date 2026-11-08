@@ -259,15 +259,45 @@ export function SoloMode({ onBack }: SoloModeProps) {
     <div className="min-h-[100dvh] bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-6 md:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 transition-colors duration-300 w-full overflow-x-hidden">
       {/* Top Header */}
       <header className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#e2e2e8] dark:border-[#35353d]">
-        <button
-          type="button"
-          onClick={onBack}
-          disabled={isRecording}
-          className="inline-flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-          <span>Hub</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {phase === "prompt" ? (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={isRecording}
+              className="inline-flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20]"
+            >
+              <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+              <span>Hub</span>
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  stopPlayback()
+                  sfx.playClick()
+                  setPhase("prompt")
+                }}
+                disabled={isRecording}
+                className="inline-flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20]"
+                title="Back to Phrase step"
+              >
+                <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+                <span>Phrase</span>
+              </button>
+              <span className="text-[#8e8d99] dark:text-[#71717d]">•</span>
+              <button
+                type="button"
+                onClick={onBack}
+                disabled={isRecording}
+                className="inline-flex items-center gap-1 font-bold text-xs uppercase tracking-wider text-[#8e8d99] dark:text-[#71717d] hover:text-[#111113] dark:hover:text-[#f5f4ed] transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20]"
+              >
+                Hub
+              </button>
+            </>
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-[#d3ff62]/10 text-[#72a800] dark:text-[#d3ff62] border border-[#d3ff62]/20">

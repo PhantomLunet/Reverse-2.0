@@ -11,7 +11,7 @@ import { AudioVisualizer } from "@/components/audio-visualizer"
 import { useSocket } from "@/hooks/use-socket"
 import { getRandomPhrase, type PhrasePrompt } from "@/lib/phrase-prompts"
 import { sfx } from "@/lib/sound-effects"
-import { PcmAudioRecorder, decodeAudioSafely } from "@/lib/audio-recorder"
+import { PcmAudioRecorder, decodeAudioSafely, encodeWAV, blobToBase64 } from "@/lib/audio-recorder"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Mic,
@@ -126,7 +126,10 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null)
   const [reversedAudioBuffer, setReversedAudioBuffer] = useState<AudioBuffer | null>(null)
   const [originalAudioBuffer, setOriginalAudioBuffer] = useState<AudioBuffer | null>(null)
+  const [reversedAudioBase64, setReversedAudioBase64] = useState<string | null>(null)
+  const [originalAudioBase64, setOriginalAudioBase64] = useState<string | null>(null)
   const [decodedAudios, setDecodedAudios] = useState<DecodedAudioMap>({})
+  const [rawAudios, setRawAudios] = useState<Record<string, { rawBase64: string; reversedBase64?: string }>>({})
   const [reversedPlayCount, setReversedPlayCount] = useState(0)
 
   // Turn state
@@ -150,6 +153,7 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const recorderRef = useRef<PcmAudioRecorder | null>(null)
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null)
+  const htmlAudioRef = useRef<HTMLAudioElement | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const onRecordCompleteRef = useRef<((base64: string) => void) | null>(null)
 
@@ -188,44 +192,114 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
     [getAudioContext],
   )
 
-  const playBuffer = useCallback(
-    (buffer: AudioBuffer, id: string, onEnd?: () => void) => {
-      const ctx = getAudioContext()
-      if (sourceNodeRef.current) {
-        try { sourceNodeRef.current.stop() } catch {}
-      }
-
-      const source = ctx.createBufferSource()
-      source.buffer = buffer
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 256
-      source.connect(analyser)
-      analyser.connect(ctx.destination)
-      setAnalyserNode(analyser)
-
-      source.onended = () => {
-        setIsPlaying(false)
-        setPlayingId(null)
-        setAnalyserNode(null)
-        if (onEnd) onEnd()
-      }
-
-      sourceNodeRef.current = source
-      source.start()
-      setIsPlaying(true)
-      setPlayingId(id)
-    },
-    [getAudioContext],
-  )
-
   const stopPlayback = useCallback(() => {
     if (sourceNodeRef.current) {
-      try { sourceNodeRef.current.stop() } catch {}
+      try {
+        sourceNodeRef.current.stop()
+      } catch {}
+      sourceNodeRef.current = null
+    }
+    if (htmlAudioRef.current) {
+      try {
+        htmlAudioRef.current.pause()
+        htmlAudioRef.current.currentTime = 0
+      } catch {}
+      htmlAudioRef.current = null
     }
     setIsPlaying(false)
     setPlayingId(null)
     setAnalyserNode(null)
   }, [])
+
+  // Dual-Engine Audio Player: Web Audio API (with real-time visualizer) + HTML5 Audio Fallback
+  const playAudio = useCallback(
+    async (
+      sourceData: { buffer?: AudioBuffer | null; base64?: string | null },
+      id: string,
+      onEnd?: () => void,
+    ) => {
+      stopPlayback()
+
+      const ctx = getAudioContext()
+      if (ctx.state === "suspended") {
+        try {
+          await ctx.resume()
+        } catch {}
+      }
+
+      // 1. Try Web Audio buffer first if available
+      if (sourceData.buffer) {
+        try {
+          const source = ctx.createBufferSource()
+          source.buffer = sourceData.buffer
+          const analyser = ctx.createAnalyser()
+          analyser.fftSize = 256
+          const gainNode = ctx.createGain()
+          gainNode.gain.setValueAtTime(1.0, ctx.currentTime)
+
+          source.connect(analyser)
+          analyser.connect(gainNode)
+          gainNode.connect(ctx.destination)
+
+          setAnalyserNode(analyser)
+
+          source.onended = () => {
+            setIsPlaying(false)
+            setPlayingId(null)
+            setAnalyserNode(null)
+            sourceNodeRef.current = null
+            if (onEnd) onEnd()
+          }
+
+          sourceNodeRef.current = source
+          source.start(0)
+          setIsPlaying(true)
+          setPlayingId(id)
+          return
+        } catch (webaudioErr) {
+          console.warn("[Party Audio] WebAudio buffer playback failed, using HTML5 Audio fallback:", webaudioErr)
+        }
+      }
+
+      // 2. HTML5 Audio element fallback (bulletproof on iOS Safari, Android Chrome, and low-spec devices)
+      if (sourceData.base64) {
+        try {
+          const cleanB64 = sourceData.base64.replace(/^data:audio\/[^;]+;base64,/, "").trim()
+          const audioUri = `data:audio/wav;base64,${cleanB64}`
+          const audio = new Audio(audioUri)
+          audio.volume = 1.0
+
+          audio.onended = () => {
+            setIsPlaying(false)
+            setPlayingId(null)
+            htmlAudioRef.current = null
+            if (onEnd) onEnd()
+          }
+
+          audio.onerror = (e) => {
+            console.error("[Party Audio] HTML5 Audio fallback playback error:", e)
+            setIsPlaying(false)
+            setPlayingId(null)
+            htmlAudioRef.current = null
+            if (onEnd) onEnd()
+          }
+
+          htmlAudioRef.current = audio
+          await audio.play()
+          setIsPlaying(true)
+          setPlayingId(id)
+          return
+        } catch (html5Err) {
+          console.error("[Party Audio] HTML5 Audio fallback playback error:", html5Err)
+        }
+      }
+
+      setIsPlaying(false)
+      setPlayingId(null)
+      if (onEnd) onEnd()
+    },
+    [getAudioContext, stopPlayback],
+  )
 
   // Direct PCM Audio Recording - Immune to Stale Closure & EncodingError
   const startRecording = useCallback(
@@ -349,23 +423,44 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       const sn = data?.speakerName || data?.speaker || "Speaker"
       setSpeakerName(sn)
       if (data?.targetText) setTargetText(data.targetText)
+      if (audioPayload) setOriginalAudioBase64(audioPayload)
 
       try {
         if (audioPayload) {
           const origBuf = await decodeBase64Audio(audioPayload)
           setOriginalAudioBuffer(origBuf)
-          const revBuf = data?.reversedAudio
-            ? await decodeBase64Audio(data.reversedAudio)
-            : reverseAudioBuffer(origBuf)
+
+          let revBuf: AudioBuffer | null = null
+          if (data?.reversedAudio) {
+            revBuf = await decodeBase64Audio(data.reversedAudio)
+            setReversedAudioBase64(data.reversedAudio)
+          } else {
+            revBuf = reverseAudioBuffer(origBuf)
+            try {
+              const chData = revBuf.getChannelData(0)
+              const wavBlob = encodeWAV(chData, revBuf.sampleRate)
+              const revB64 = await blobToBase64(wavBlob)
+              setReversedAudioBase64(revB64)
+            } catch (convErr) {
+              console.warn("Could not encode reversed wav base64:", convErr)
+            }
+          }
           setReversedAudioBuffer(revBuf)
         }
       } catch (e) {
         console.error("Failed to decode audio buffers:", e)
       }
 
-      if (speaker?.id !== socketId) {
+      const isMeSpeaker =
+        (data?.speakerId && data.speakerId === socketId) ||
+        (speaker && speaker.id === socketId) ||
+        sn === playerName
+
+      if (!isMeSpeaker) {
         setPhase("listening-reversed")
         sfx.playRewind()
+      } else {
+        setPhase("waiting-turn")
       }
     }
 
@@ -417,12 +512,22 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       if (data?.targetText) setTargetText(data.targetText)
 
       const audioMap: DecodedAudioMap = {}
+      const rawMap: Record<string, { rawBase64: string; reversedBase64?: string }> = {}
+
       for (const a of audios) {
         if (!a.skipped && a.audioData) {
+          rawMap[a.playerId] = { rawBase64: a.audioData }
           try {
             const raw = await decodeBase64Audio(a.audioData)
             const rev = reverseAudioBuffer(raw)
             audioMap[a.playerId] = { raw, reversed: rev }
+
+            try {
+              const chData = rev.getChannelData(0)
+              const wavBlob = encodeWAV(chData, rev.sampleRate)
+              const revB64 = await blobToBase64(wavBlob)
+              rawMap[a.playerId].reversedBase64 = revB64
+            } catch {}
           } catch (e) {
             console.error(`Failed to decode audio for ${a.playerName}:`, e)
             audioMap[a.playerId] = { raw: null, reversed: null }
@@ -430,6 +535,7 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
         }
       }
       setDecodedAudios(audioMap)
+      setRawAudios(rawMap)
       setPhase("all-done")
     })
 
@@ -455,7 +561,10 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
       setFinalScores(null)
       setReversedAudioBuffer(null)
       setOriginalAudioBuffer(null)
+      setReversedAudioBase64(null)
+      setOriginalAudioBase64(null)
       setDecodedAudios({})
+      setRawAudios({})
       setReversedPlayCount(0)
       setTargetText(null)
     })
@@ -532,6 +641,36 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
     })
   }, [joinCode, playerName, emit])
 
+  const handleLeaveRoom = useCallback(() => {
+    sfx.playClick()
+    stopPlayback()
+    if (roomCode) {
+      emit("leave-room", { roomCode, playerName })
+    }
+    setRoomCode("")
+    setJoinCode("")
+    setPlayers([])
+    setIsHost(false)
+    setSpeaker(null)
+    setAllAudios([])
+    setDecodedAudios({})
+    setRawAudios({})
+    setReversedAudioBuffer(null)
+    setOriginalAudioBuffer(null)
+    setReversedAudioBase64(null)
+    setOriginalAudioBase64(null)
+    setFinalScores(null)
+    setRankings([])
+    setRankingSubmitted(false)
+    setError(null)
+
+    if (initialRoomCode) {
+      onBack()
+    } else {
+      setPhase("choose-role")
+    }
+  }, [stopPlayback, roomCode, emit, playerName, initialRoomCode, onBack])
+
   const handleStartGame = useCallback(() => {
     emit("start-game", { roomCode })
     sfx.playClick()
@@ -552,11 +691,14 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
   }, [customPhrase, speakerPrompt, triggerRecordingCountdown, startRecording, emit, roomCode])
 
   const handlePlayReversed = useCallback(() => {
-    if (reversedAudioBuffer && reversedPlayCount < MAX_REVERSE_PLAYS) {
-      playBuffer(reversedAudioBuffer, "party-reversed")
+    if (reversedPlayCount < MAX_REVERSE_PLAYS && (reversedAudioBuffer || reversedAudioBase64)) {
+      playAudio(
+        { buffer: reversedAudioBuffer, base64: reversedAudioBase64 },
+        "party-reversed",
+      )
       setReversedPlayCount((c) => c + 1)
     }
-  }, [reversedAudioBuffer, reversedPlayCount, playBuffer])
+  }, [reversedAudioBuffer, reversedAudioBase64, reversedPlayCount, playAudio])
 
   const handleReadyToImitate = useCallback(() => {
     setPhase("waiting-turn")
@@ -621,30 +763,72 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
 
   return (
     <div className="min-h-[100dvh] bg-[#ffffff] dark:bg-[#111113] text-[#111113] dark:text-[#f5f4ed] flex flex-col justify-between p-4 sm:p-6 md:p-8 max-w-2xl mx-auto selection:bg-[#d3ff62]/30 font-sans transition-colors duration-300 w-full overflow-x-hidden">
-      {/* Top Bar Header */}
+      {/* Top Bar Header with Persistent Back Navigation */}
       <header className="flex flex-wrap items-center justify-between border-b border-[#e2e2e8] dark:border-[#35353d] pb-3 sm:pb-4 gap-2.5">
-        {phase === "choose-role" ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            className="font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
-            Hub
-          </Button>
-        ) : (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {phase === "choose-role" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
+              Hub
+            </Button>
+          ) : phase === "host-setup" || phase === "join-setup" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                sfx.playClick()
+                setError(null)
+                if (initialRoomCode) {
+                  onBack()
+                } else {
+                  setPhase("choose-role")
+                }
+              }}
+              className="font-bold text-xs uppercase tracking-wider text-[#61616c] dark:text-[#aaa9b4] hover:text-[#111113] dark:hover:text-[#f5f4ed] hover:bg-[#eaeaf0] dark:hover:bg-[#1b1b20] rounded-xl cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
+              Back
+            </Button>
+          ) : phase === "lobby" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLeaveRoom}
+              className="font-bold text-xs uppercase tracking-wider text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 hover:bg-rose-500/10 rounded-xl cursor-pointer"
+              title="Leave room and return to menu"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
+              Leave Room
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLeaveRoom}
+              className="font-bold text-xs uppercase tracking-wider text-[#8e8d99] hover:text-rose-500 dark:text-[#71717d] dark:hover:text-rose-400 hover:bg-rose-500/10 rounded-xl cursor-pointer"
+              title="Exit Party Room"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1.5" strokeWidth={2.5} />
+              Exit Room
+            </Button>
+          )}
+
+          <div className="flex items-center gap-1.5 pl-0.5 sm:pl-1">
             <span
               className={`w-2.5 h-2.5 rounded-full ${
                 isConnected ? "bg-[#d3ff62] shadow-[0_0_10px_#d3ff62] animate-pulse" : "bg-rose-500"
               }`}
             />
-            <span className="text-xs font-bold text-[#61616c] dark:text-[#aaa9b4]">
+            <span className="hidden sm:inline text-xs font-bold text-[#61616c] dark:text-[#aaa9b4]">
               {isConnected ? "Party Online" : "Connecting..."}
             </span>
           </div>
-        )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {roomCode && (
@@ -943,18 +1127,40 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
 
             {/* Host Launch or Waiting */}
             {isHost ? (
-              <Button
-                size="lg"
-                className="w-full py-7 text-base font-black tracking-wide rounded-2xl bg-[#d3ff62] text-[#111113] hover:bg-[#c2f247] shadow-[0_0_25px_rgba(211,255,98,0.25)] active:scale-[0.98] transition-all cursor-pointer"
-                onClick={handleStartGame}
-                disabled={players.length < 2}
-              >
-                <Sparkles className="h-5 w-5 mr-2" />
-                Start Party Game ({players.length} Players Ready)!
-              </Button>
+              <div className="space-y-3">
+                <Button
+                  size="lg"
+                  className="w-full py-7 text-base font-black tracking-wide rounded-2xl bg-[#d3ff62] text-[#111113] hover:bg-[#c2f247] shadow-[0_0_25px_rgba(211,255,98,0.25)] active:scale-[0.98] transition-all cursor-pointer"
+                  onClick={handleStartGame}
+                  disabled={players.length < 2}
+                >
+                  <Sparkles className="h-5 w-5 mr-2" />
+                  Start Party Game ({players.length} Players Ready)!
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={handleLeaveRoom}
+                  className="w-full py-5 text-sm font-bold rounded-2xl border border-[#35353d] bg-transparent text-[#8e8d99] hover:text-rose-400 hover:border-rose-500/40 hover:bg-rose-500/10 transition-all cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Close Room & Return to Menu
+                </Button>
+              </div>
             ) : (
-              <div className="text-center py-4 text-sm font-bold text-[#d3ff62] animate-pulse">
-                Waiting for the host to launch the round...
+              <div className="space-y-3">
+                <div className="text-center py-4 text-sm font-bold text-[#d3ff62] animate-pulse">
+                  Waiting for the host to launch the round...
+                </div>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={handleLeaveRoom}
+                  className="w-full py-5 text-sm font-bold rounded-2xl border border-[#35353d] bg-transparent text-[#8e8d99] hover:text-rose-400 hover:border-rose-500/40 hover:bg-rose-500/10 transition-all cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Leave Party Room
+                </Button>
               </div>
             )}
           </div>
@@ -1089,7 +1295,7 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
               <Button
                 size="lg"
                 onClick={handlePlayReversed}
-                disabled={isPlaying || reversedPlayCount >= MAX_REVERSE_PLAYS || !reversedAudioBuffer}
+                disabled={isPlaying || reversedPlayCount >= MAX_REVERSE_PLAYS || (!reversedAudioBuffer && !reversedAudioBase64)}
                 className="py-7 text-base font-black tracking-wide rounded-2xl bg-[#ae98f5] text-[#111113] hover:bg-[#9d84f0] shadow-[0_0_25px_rgba(174,152,245,0.25)] active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Volume2 className="mr-2 h-5 w-5" strokeWidth={2.25} />
@@ -1250,7 +1456,9 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
                 disabled={isPlaying && playingId !== "orig"}
                 onClick={() => {
                   if (playingId === "orig") stopPlayback()
-                  else if (originalAudioBuffer) playBuffer(originalAudioBuffer, "orig")
+                  else if (originalAudioBuffer || originalAudioBase64) {
+                    playAudio({ buffer: originalAudioBuffer, base64: originalAudioBase64 }, "orig")
+                  }
                 }}
                 className="font-bold text-xs rounded-xl border border-[#35353d] bg-[#232329] text-[#f5f4ed] hover:bg-[#2c2c35] cursor-pointer"
               >
@@ -1267,6 +1475,7 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
 
               {allAudios.map((audio) => {
                 const decoded = decodedAudios[audio.playerId]
+                const rawEntry = rawAudios[audio.playerId]
                 const revId = `rev-${audio.playerId}`
                 const rawId = `raw-${audio.playerId}`
 
@@ -1285,7 +1494,13 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
                         disabled={isPlaying && playingId !== revId}
                         onClick={() => {
                           if (playingId === revId) stopPlayback()
-                          else if (decoded?.reversed) playBuffer(decoded.reversed, revId)
+                          else {
+                            const revBuffer = decoded?.reversed
+                            const revB64 = rawEntry?.reversedBase64 || rawEntry?.rawBase64 || audio.audioData
+                            if (revBuffer || revB64) {
+                              playAudio({ buffer: revBuffer, base64: revB64 }, revId)
+                            }
+                          }
                         }}
                         className="font-bold text-xs rounded-xl bg-[#d3ff62] text-[#111113] hover:bg-[#c2f247] shadow-[0_0_15px_rgba(211,255,98,0.2)] cursor-pointer"
                       >
@@ -1299,7 +1514,13 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
                         disabled={isPlaying && playingId !== rawId}
                         onClick={() => {
                           if (playingId === rawId) stopPlayback()
-                          else if (decoded?.raw) playBuffer(decoded.raw, rawId)
+                          else {
+                            const rawBuffer = decoded?.raw
+                            const rawB64 = rawEntry?.rawBase64 || audio.audioData
+                            if (rawBuffer || rawB64) {
+                              playAudio({ buffer: rawBuffer, base64: rawB64 }, rawId)
+                            }
+                          }
                         }}
                         className="font-bold text-xs text-[#aaa9b4] hover:text-[#f5f4ed] hover:bg-[#232329]"
                         title="Hear raw backward pronunciation"
@@ -1442,14 +1663,22 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
                           <span className="font-black text-sm text-[#d3ff62]">
                             {score} PTS
                           </span>
-                          {decoded?.reversed && (
+                          {(decoded?.reversed || rawAudios[pid]?.reversedBase64 || rawAudios[pid]?.rawBase64) && (
                             <Button
                               size="sm"
                               variant="ghost"
                               className="h-8 w-8 p-0 rounded-lg hover:bg-[#232329] cursor-pointer"
                               onClick={() => {
                                 if (playingId === revId) stopPlayback()
-                                else if (decoded?.reversed) playBuffer(decoded.reversed, revId)
+                                else {
+                                  playAudio(
+                                    {
+                                      buffer: decoded?.reversed,
+                                      base64: rawAudios[pid]?.reversedBase64 || rawAudios[pid]?.rawBase64,
+                                    },
+                                    revId,
+                                  )
+                                }
                               }}
                             >
                               <Play className={`h-4 w-4 ${playingId === revId ? "text-[#d3ff62] animate-pulse fill-current" : ""}`} />
@@ -1462,20 +1691,32 @@ export function PartyMode({ onBack, initialRoomCode }: PartyModeProps) {
               </div>
             )}
 
-            {isHost ? (
+            <div className="space-y-3 pt-2">
+              {isHost ? (
+                <Button
+                  size="lg"
+                  className="w-full py-7 text-base font-black tracking-wide rounded-2xl bg-[#d3ff62] text-[#111113] hover:bg-[#c2f247] shadow-[0_0_25px_rgba(211,255,98,0.25)] active:scale-[0.98] transition-all cursor-pointer"
+                  onClick={handleNewRound}
+                >
+                  <RotateCcw className="mr-2 h-5 w-5" />
+                  Start Next Round (Rotate Speaker)!
+                </Button>
+              ) : (
+                <p className="text-xs font-bold text-[#aaa9b4] animate-pulse py-2">
+                  Waiting for the host to launch the next round...
+                </p>
+              )}
+
               <Button
+                variant="outline"
                 size="lg"
-                className="w-full py-7 text-base font-black tracking-wide rounded-2xl bg-[#d3ff62] text-[#111113] hover:bg-[#c2f247] shadow-[0_0_25px_rgba(211,255,98,0.25)] active:scale-[0.98] transition-all cursor-pointer"
-                onClick={handleNewRound}
+                onClick={handleLeaveRoom}
+                className="w-full py-5 text-sm font-bold rounded-2xl border border-[#35353d] bg-transparent text-[#8e8d99] hover:text-rose-400 hover:border-rose-500/40 hover:bg-rose-500/10 transition-all cursor-pointer"
               >
-                <RotateCcw className="mr-2 h-5 w-5" />
-                Start Next Round (Rotate Speaker)!
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Leave Party Room
               </Button>
-            ) : (
-              <p className="text-xs font-bold text-[#aaa9b4] animate-pulse">
-                Waiting for the host to launch the next round...
-              </p>
-            )}
+            </div>
           </div>
         )}
       </main>
